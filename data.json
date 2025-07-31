@@ -1,0 +1,16 @@
+{
+  "apiKey": "dzrt",
+  "syncInterval": 120,
+  "defaultFolder": "Screvi Highlights",
+  "autoSync": true,
+  "lastSyncTime": 1753960616810,
+  "includeMetadata": true,
+  "tagPrefix": "screvi/",
+  "autoLinkFields": [
+    "author",
+    "source"
+  ],
+  "enableAutoLinking": true,
+  "appendToDaily": false,
+  "dailyNoteFormat": "YYYY-MM-DD"
+}

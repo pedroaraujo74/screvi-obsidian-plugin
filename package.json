@@ -1,0 +1,36 @@
+{
+  "name": "obsidian-screvi-plugin",
+  "version": "1.0.1",
+  "description": "Obsidian plugin to sync with Screvi highlights",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "screvi",
+    "highlights",
+    "sync"
+  ],
+  "author": "Pedro",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "@typescript-eslint/eslint-plugin": "5.29.0",
+    "@typescript-eslint/parser": "5.29.0",
+    "builtin-modules": "3.3.0",
+    "esbuild": "0.17.3",
+    "obsidian": "latest",
+    "tslib": "2.4.0",
+    "typescript": "4.7.4"
+  },
+  "dependencies": {
+    "@types/mustache": "^4.2.6",
+    "@types/nunjucks": "^3.2.6",
+    "mustache": "^4.2.0",
+    "nunjucks": "^3.2.4"
+  }
+}

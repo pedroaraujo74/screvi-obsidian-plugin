@@ -1,0 +1,12 @@
+{
+  "id": "screvi-sync",
+  "name": "Screvi Official",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Official Screvi plugin for Obsidian - sync your highlights and annotations seamlessly",
+  "author": "Screvi Team",
+  "authorUrl": "https://screvi.com",
+  "fundingUrl": "https://screvi.com/pricing",
+  "isDesktopOnly": false
+}
+

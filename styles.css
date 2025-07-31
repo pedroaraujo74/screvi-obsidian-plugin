@@ -1,0 +1,229 @@
+/* Screvi Sync Plugin Styles */
+
+.screvi-sync-ribbon-class {
+    color: var(--text-accent);
+}
+
+.screvi-sync-ribbon-class:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+/* Highlight Search Modal Styles */
+.screvi-highlight-item {
+    padding: 12px;
+    border: 1px solid var(--background-modifier-border);
+    margin-bottom: 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+}
+
+.screvi-highlight-item:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.screvi-highlight-source {
+    font-weight: bold;
+    color: var(--text-accent);
+    margin-bottom: 4px;
+}
+
+.screvi-highlight-text {
+    color: var(--text-normal);
+    line-height: 1.4;
+    margin-bottom: 8px;
+}
+
+.screvi-highlight-date {
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+/* Settings page styles */
+.screvi-template-textarea {
+    font-family: var(--font-monospace) !important;
+    font-size: 0.9em;
+    line-height: 1.4;
+    resize: vertical;
+}
+
+.screvi-settings-section {
+    margin-top: 2em;
+    padding-top: 1em;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.screvi-sync-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.screvi-sync-status.syncing {
+    background-color: var(--background-modifier-form-field);
+    color: var(--text-accent);
+}
+
+.screvi-sync-status.success {
+    background-color: var(--color-green);
+    color: white;
+}
+
+.screvi-sync-status.error {
+    background-color: var(--color-red);
+    color: white;
+}
+
+/* Loading spinner */
+.screvi-loading-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--background-modifier-border);
+    border-radius: 50%;
+    border-top-color: var(--text-accent);
+    animation: screvi-spin 1s linear infinite;
+}
+
+@keyframes screvi-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Highlight preview in modals */
+.screvi-highlight-preview {
+    background-color: var(--background-primary-alt);
+    border-left: 4px solid var(--text-accent);
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 0 4px 4px 0;
+}
+
+.screvi-highlight-preview blockquote {
+    margin: 0;
+    font-style: italic;
+}
+
+/* Search input styling */
+.screvi-search-input {
+    width: 100%;
+    padding: 8px 12px;
+    margin-bottom: 16px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.screvi-search-input:focus {
+    outline: none;
+    border-color: var(--text-accent);
+    box-shadow: 0 0 0 2px var(--text-accent-hover);
+}
+
+/* List styles */
+.screvi-highlights-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+}
+
+.screvi-no-highlights {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Button styles */
+.screvi-button {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.15s ease;
+}
+
+.screvi-button:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+.screvi-button.secondary {
+    background-color: var(--background-modifier-border);
+    color: var(--text-normal);
+}
+
+.screvi-button.secondary:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+/* Status bar item */
+.status-bar-item.screvi-status {
+    font-size: 0.85em;
+}
+
+/* Template editor enhancements */
+.screvi-template-help {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.3;
+}
+
+.screvi-template-variables {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.screvi-template-variable {
+    background-color: var(--background-modifier-border);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: var(--font-monospace);
+    font-size: 0.8em;
+    color: var(--text-accent);
+}
+
+/* Modal improvements */
+.modal.screvi-modal .modal-content {
+    max-width: 600px;
+    max-height: 80vh;
+}
+
+.screvi-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 16px;
+}
+
+.screvi-modal-title {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin: 0;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .screvi-highlights-list {
+        max-height: 300px;
+    }
+    
+    .modal.screvi-modal .modal-content {
+        max-width: 95vw;
+        max-height: 90vh;
+    }
+} 
