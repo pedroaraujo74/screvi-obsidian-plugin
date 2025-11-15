@@ -3,7 +3,7 @@
   "name": "Screvi Official",
   "version": "1.0.1",
   "minAppVersion": "0.15.0",
-  "description": "Official Screvi plugin for Obsidian - sync your highlights and annotations seamlessly",
+  "description": "Official Screvi plugin for Obsidian - import your highlights from Screvi to Obsidian",
   "author": "Screvi Team",
   "authorUrl": "https://screvi.com",
   "isDesktopOnly": false
