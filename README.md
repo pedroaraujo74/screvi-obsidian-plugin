@@ -7,9 +7,7 @@ This official plugin maintained by the Screvi team enables you to easily and aut
 - **Automatic Sync**: Automatically sync your highlights at regular intervals
 - **Manual Sync**: Sync on-demand with a single click
 - **Organized by Source**: Highlights are automatically organized by source type (books, articles, tweets, etc.)
-- **Template Support**: Customize how highlights are formatted using Nunjucks templates
-- **Search**: Quickly search through all your synced highlights
-- **Auto-linking**: Automatically create bidirectional links for authors and sources
+
 
 ## Installation
 
@@ -20,7 +18,7 @@ This official plugin maintained by the Screvi team enables you to easily and aut
 
 ## Setup
 
-1. Get your Screvi API key from [screvi.com](https://screvi.com)
+1. Get your Screvi API key from [screvi.com/settings/api](https://app.screvi.com/settings/api)
 2. Open Plugin Settings
 3. Enter your API key
 4. Configure sync preferences (optional)
@@ -28,7 +26,5 @@ This official plugin maintained by the Screvi team enables you to easily and aut
 
 ## Requirements
 
-- Obsidian 0.15.0 or higher
-- A Screvi account with an active subscription
+- A Screvi account with an active trial or subscription
 
-**Note:** This plugin requires a subscription with Screvi
