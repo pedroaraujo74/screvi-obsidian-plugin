@@ -53,7 +53,7 @@ export default class ScreviSyncPlugin extends Plugin {
 		// Commands
 		this.addCommand({
 			id: 'sync-screvi-highlights',
-			name: 'Sync Screvi Highlights',
+			name: 'Sync Screvi highlights',
 			callback: async () => {
 				await this.syncHighlights();
 			}
@@ -61,7 +61,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'insert-screvi-highlight',
-			name: 'Insert Screvi Highlight',
+			name: 'Insert Screvi highlight',
 			editorCallback: (editor: Editor, view: MarkdownView) => {
 				this.insertHighlightModal(editor);
 			}
@@ -69,7 +69,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'search-screvi-highlights',
-			name: 'Search Screvi Highlights',
+			name: 'Search Screvi highlights',
 			callback: () => {
 				new ScreviSearchModal(this.app, this.highlights, (highlight) => {
 					// Open or create note with the highlight
@@ -80,7 +80,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'force-full-sync',
-			name: 'Force Full Sync',
+			name: 'Force full sync',
 			callback: async () => {
 				await this.syncHighlights(true);
 			}
@@ -88,7 +88,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'browse-sources',
-			name: 'Browse Sources',
+			name: 'Browse sources',
 			callback: () => {
 				this.browseSourcesModal();
 			}
@@ -715,7 +715,7 @@ class ScreviHighlightModal extends Modal {
 
 	onOpen() {
 		const {contentEl} = this;
-		contentEl.createEl("h1", { text: "Insert Screvi Highlight" });
+		contentEl.createEl("h1", { text: "Insert Screvi highlight" });
 		
 		if (this.highlights.length === 0) {
 			contentEl.createEl("p", { text: "No highlights available. Please sync your highlights first." });
@@ -826,7 +826,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		// API Key
 		new Setting(containerEl)
-			.setName('Screvi API Key')
+			.setName('Screvi API key')
 			.setDesc('Your Screvi API key for authentication')
 			.addText(text => text
 				.setPlaceholder('Enter your API key')
@@ -838,7 +838,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		// Auto Sync
 		new Setting(containerEl)
-			.setName('Auto Sync')
+			.setName('Auto sync')
 			.setDesc('Automatically sync highlights at regular intervals')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.autoSync)
@@ -852,7 +852,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		// Sync Interval (only show if auto sync is enabled)
 		if (this.plugin.settings.autoSync) {
 			new Setting(containerEl)
-				.setName('Sync Interval')
+				.setName('Sync interval')
 				.setDesc('How often to automatically sync highlights')
 				.addSlider(slider => slider
 					.setLimits(1, 24, 1)
@@ -869,7 +869,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		containerEl.createEl('h3', {text: 'Actions'});
 
 		new Setting(containerEl)
-			.setName('Sync Now')
+			.setName('Sync now')
 			.setDesc('Manually sync highlights from Screvi')
 			.addButton(button => button
 				.setButtonText('Sync')
@@ -886,17 +886,17 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Full Sync')
+			.setName('Full sync')
 			.setDesc('Re-sync all highlights (ignores last sync time)')
 			.addButton(button => button
-				.setButtonText('Full Sync')
+				.setButtonText('Full sync')
 				.onClick(async () => {
 					button.setButtonText('Syncing...');
 					button.setDisabled(true);
 					try {
 						await this.plugin.syncHighlights(true);
 					} finally {
-						button.setButtonText('Full Sync');
+						button.setButtonText('Full sync');
 						button.setDisabled(false);
 					}
 				}));
