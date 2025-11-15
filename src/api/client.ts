@@ -34,6 +34,57 @@ export class ScreviApiClient {
 		return response.json();
 	}
 
+	private decodeHtmlEntities(text: string): string {
+		if (!text) return text;
+		
+		// Common HTML entities that might appear in content
+		const entities: { [key: string]: string } = {
+			'&amp;': '&',
+			'&lt;': '<',
+			'&gt;': '>',
+			'&quot;': '"',
+			'&#39;': "'",
+			'&apos;': "'",
+			'&nbsp;': ' ',
+			'&ndash;': '\u2013',
+			'&mdash;': '\u2014',
+			'&hellip;': '\u2026',
+			'&lsquo;': '\u2018',
+			'&rsquo;': '\u2019',
+			'&ldquo;': '\u201c',
+			'&rdquo;': '\u201d'
+		};
+
+		let decoded = text;
+
+		// First handle JSON escape sequences
+		decoded = decoded
+			.replace(/\\n/g, '\n')      // Newlines
+			.replace(/\\t/g, '\t')      // Tabs  
+			.replace(/\\r/g, '\r')      // Carriage returns
+			.replace(/\\"/g, '"')       // Escaped quotes
+			.replace(/\\\\/g, '\\');    // Escaped backslashes (do this last)
+
+		// Replace named HTML entities
+		for (const [entity, replacement] of Object.entries(entities)) {
+			if (decoded.includes(entity)) {
+				decoded = decoded.replace(new RegExp(entity, 'g'), replacement);
+			}
+		}
+
+		// Replace numeric entities (like &#39; &#8217; etc.)
+		decoded = decoded.replace(/&#(\d+);/g, (match, num) => {
+			return String.fromCharCode(parseInt(num, 10));
+		});
+
+		// Replace hex entities (like &#x27; etc.)
+		decoded = decoded.replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => {
+			return String.fromCharCode(parseInt(hex, 16));
+		});
+
+		return decoded;
+	}
+
 	async fetchAllHighlights(format: string = 'markdown'): Promise<ScreviHighlight[]> {
 		let allSources: any[] = [];
 		let currentPage = 1;
@@ -63,11 +114,11 @@ export class ScreviApiClient {
 					const mappedHighlight: ScreviHighlight = {
 						// Map actual database fields to interface
 						id: highlight.id,
-						content: highlight.content,
+						content: this.decodeHtmlEntities(highlight.content),
 						note: highlight.notes, // Database uses 'notes', interface expects 'note'
 						source: source.name, // Use source name from parent object
 						sourceType: source.type, // Use source type from parent object
-						title: source.name, // Use source name as title for highlights
+						title: this.decodeHtmlEntities(source.name), // Use source name as title for highlights
 						author: highlight.author || source.author, // Highlight has author field
 						url: highlight.url || source.url,
 						date: highlight.created_at || source.created_at,
@@ -126,11 +177,11 @@ export class ScreviApiClient {
 					const mappedHighlight: ScreviHighlight = {
 						// Map actual database fields to interface
 						id: highlight.id,
-						content: highlight.content,
+						content: this.decodeHtmlEntities(highlight.content),
 						note: highlight.notes, // Database uses 'notes', interface expects 'note'
 						source: source.name, // Use source name from parent object
 						sourceType: source.type, // Use source type from parent object
-						title: source.name, // Use source name as title for highlights
+						title: this.decodeHtmlEntities(source.name), // Use source name as title for highlights
 						author: highlight.author || source.author, // Highlight has author field
 						url: highlight.url || source.url,
 						date: highlight.created_at || source.created_at,
@@ -175,9 +226,9 @@ export class ScreviApiClient {
 		// Map sources to expected interface
 		return allSources.map(source => ({
 			id: source.id || source.asin || source.name,
-			name: source.name,
+			name: this.decodeHtmlEntities(source.name),
 			type: source.type,
-			author: source.author,
+			author: this.decodeHtmlEntities(source.author),
 			url: source.url,
 			highlights: source.highlights || []
 		}));

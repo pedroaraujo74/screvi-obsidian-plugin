@@ -1,5 +1,5 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, SuggestModal, FuzzySuggestModal } from 'obsidian';
-import { ScreviApiClient, ScreviHighlight, Source } from './src/api';
+import { ScreviApiClient, ScreviHighlight, Source, VALID_SOURCE_TYPES } from './src/api';
 import * as nunjucks from 'nunjucks';
 
 interface ScreviSyncSettings {
@@ -34,6 +34,7 @@ export default class ScreviSyncPlugin extends Plugin {
 	highlights: ScreviHighlight[] = [];
 	apiClient: ScreviApiClient;
 	nunjucksEnv: nunjucks.Environment;
+	private isSyncing: boolean = false;
 
 	async onload() {
 		await this.loadSettings();
@@ -49,18 +50,12 @@ export default class ScreviSyncPlugin extends Plugin {
 		this.statusBarItem = this.addStatusBarItem();
 		this.updateStatusBar('Ready');
 
-		// Ribbon icon
-		const ribbonIconEl = this.addRibbonIcon('sync', 'Sync Screvi Highlights', (evt: MouseEvent) => {
-			this.syncHighlights();
-		});
-		ribbonIconEl.addClass('screvi-sync-ribbon-class');
-
 		// Commands
 		this.addCommand({
 			id: 'sync-screvi-highlights',
 			name: 'Sync Screvi Highlights',
-			callback: () => {
-				this.syncHighlights();
+			callback: async () => {
+				await this.syncHighlights();
 			}
 		});
 
@@ -86,8 +81,8 @@ export default class ScreviSyncPlugin extends Plugin {
 		this.addCommand({
 			id: 'force-full-sync',
 			name: 'Force Full Sync',
-			callback: () => {
-				this.syncHighlights(true);
+			callback: async () => {
+				await this.syncHighlights(true);
 			}
 		});
 
@@ -131,10 +126,15 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async loadHighlightTemplate(): Promise<string> {
 		try {
-			const highlightTemplatePath = `templates/highlight-template.md`;
-			const highlightTemplateFile = this.app.vault.getAbstractFileByPath(highlightTemplatePath);
-			if (highlightTemplateFile instanceof TFile) {
-				return await this.app.vault.read(highlightTemplateFile);
+			const fs = require('fs');
+			const path = require('path');
+			
+			// Get the plugin directory path
+			const pluginDir = (this.app.vault.adapter as any).basePath + '/.obsidian/plugins/obsidian-screvi-plugin';
+			const highlightTemplatePath = path.join(pluginDir, 'templates', 'highlight-template.md');
+			
+			if (fs.existsSync(highlightTemplatePath)) {
+				return fs.readFileSync(highlightTemplatePath, 'utf8');
 			}
 		} catch (error) {
 			console.error('Error loading highlight template:', error);
@@ -144,10 +144,15 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async loadBookTemplate(): Promise<string> {
 		try {
-			const bookTemplatePath = `templates/book-template.md`;
-			const bookTemplateFile = this.app.vault.getAbstractFileByPath(bookTemplatePath);
-			if (bookTemplateFile instanceof TFile) {
-				return await this.app.vault.read(bookTemplateFile);
+			const fs = require('fs');
+			const path = require('path');
+			
+			// Get the plugin directory path
+			const pluginDir = (this.app.vault.adapter as any).basePath + '/.obsidian/plugins/obsidian-screvi-plugin';
+			const bookTemplatePath = path.join(pluginDir, 'templates', 'book-template.md');
+			
+			if (fs.existsSync(bookTemplatePath)) {
+				return fs.readFileSync(bookTemplatePath, 'utf8');
 			}
 		} catch (error) {
 			console.error('Error loading book template:', error);
@@ -179,7 +184,13 @@ export default class ScreviSyncPlugin extends Plugin {
 			return;
 		}
 
+		if (this.isSyncing) {
+			new Notice('Sync already in progress');
+			return;
+		}
+
 		try {
+			this.isSyncing = true;
 			this.updateStatusBar('Syncing...');
 			
 			const start_from = fullSync ? undefined : this.settings.lastSyncTime;
@@ -211,8 +222,11 @@ export default class ScreviSyncPlugin extends Plugin {
 			}
 		} catch (error) {
 			console.error('Error syncing highlights:', error);
-			new Notice('Failed to sync highlights: ' + error.message);
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			new Notice('Failed to sync highlights: ' + errorMessage);
 			this.updateStatusBar('Sync failed');
+		} finally {
+			this.isSyncing = false;
 		}
 	}
 
@@ -227,21 +241,23 @@ export default class ScreviSyncPlugin extends Plugin {
 		const highlightsByType = this.groupHighlightsBySourceType(highlights);
 		
 		for (const [sourceType, typeHighlights] of Object.entries(highlightsByType)) {
-			// Create source type folder
-			const typeFolderPath = `${this.settings.defaultFolder}/${this.sanitizeFileName(sourceType)}`;
+			// Create source type folder with display name
+			const displayName = this.getSourceTypeDisplayName(sourceType);
+			const typeFolderPath = `${this.settings.defaultFolder}/${this.sanitizeFileName(displayName)}`;
 			const typeFolder = this.app.vault.getAbstractFileByPath(typeFolderPath);
 			if (!typeFolder) {
 				await this.app.vault.createFolder(typeFolderPath);
 			}
 
 			// Always create book files (group highlights by source)
-			await this.createBookFiles(typeHighlights, sourceType);
+			// Pass display name for folder path, but keep sourceType for internal logic
+			await this.createBookFiles(typeHighlights, displayName);
 		}
 	}
 
-	async createBookFiles(highlights: ScreviHighlight[], sourceType?: string) {
+	async createBookFiles(highlights: ScreviHighlight[], sourceTypeDisplayName?: string) {
 		const groupedHighlights = this.groupHighlightsBySource(highlights);
-		const baseFolder = sourceType ? `${this.settings.defaultFolder}/${this.sanitizeFileName(sourceType)}` : this.settings.defaultFolder;
+		const baseFolder = sourceTypeDisplayName ? `${this.settings.defaultFolder}/${this.sanitizeFileName(sourceTypeDisplayName)}` : this.settings.defaultFolder;
 		
 		for (const [source, sourceHighlights] of Object.entries(groupedHighlights)) {
 			const fileName = this.sanitizeFileName(source);
@@ -256,7 +272,9 @@ export default class ScreviSyncPlugin extends Plugin {
 				
 				// Append each new highlight
 				for (const highlight of sourceHighlights) {
-					const highlightContent = `\n> ${highlight.content}\n\n---\n`;
+					// Format content as proper blockquote (add > to each line)
+					const formattedContent = this.formatAsBlockquote(highlight.content || '');
+					const highlightContent = `\n${formattedContent}\n\n---\n`;
 					
 					// Only append if this exact highlight isn't already in the file
 					if (!existingContent.includes(highlight.content)) {
@@ -301,9 +319,7 @@ export default class ScreviSyncPlugin extends Plugin {
 			let sourceType = highlight.sourceType || 'self';
 			
 			// Map to the exact folder types: "book", "tweet", "self", "article", "youtube"
-			const validTypes = ['book', 'tweet', 'self', 'article', 'youtube'];
-			
-			if (!validTypes.includes(sourceType)) {
+			if (!VALID_SOURCE_TYPES.includes(sourceType as any)) {
 				sourceType = 'self'; // Default fallback
 			}
 			
@@ -343,6 +359,19 @@ export default class ScreviSyncPlugin extends Plugin {
 			.split('\n')
 			.map(line => line.trim() ? `> ${line.trim()}` : '>')
 			.join('\n');
+	}
+
+	getSourceTypeDisplayName(sourceType: string): string {
+		// Map source types to user-friendly display names
+		const displayNames: Record<string, string> = {
+			'article': 'Articles',
+			'book': 'Books',
+			'self': 'Personal Notes',
+			'tweet': 'Tweets',
+			'youtube': 'YouTube'
+		};
+		
+		return displayNames[sourceType] || sourceType;
 	}
 
 	sanitizeFileName(name: string): string {
@@ -397,8 +426,29 @@ export default class ScreviSyncPlugin extends Plugin {
 		
 		this.nunjucksEnv.addFilter('blockquote', (str: string) => {
 			if (str && str.trim()) {
+				// Decode HTML entities first (in case content has &gt; etc.)
+				const decoded = this.decodeHtmlEntities(str);
 				// Split by line breaks and add > to each line
-				return str.trim().split('\n').map(line => `> ${line}`).join('\n');
+				const blockquoted = decoded.trim().split('\n').map(line => {
+					// Handle empty lines by adding just ">"
+					return line.trim() ? `> ${line}` : '>';
+				}).join('\n');
+				// Return as SafeString to prevent Nunjucks from HTML-escaping it
+				return new nunjucks.runtime.SafeString(blockquoted);
+			}
+			return str;
+		});
+
+		this.nunjucksEnv.addFilter('decode_html', (str: string) => {
+			if (str && typeof str === 'string') {
+				return this.decodeHtmlEntities(str);
+			}
+			return str;
+		});
+
+		this.nunjucksEnv.addFilter('decode_text', (str: string) => {
+			if (str && typeof str === 'string') {
+				return this.decodeHtmlEntities(str);
 			}
 			return str;
 		});
@@ -426,7 +476,8 @@ export default class ScreviSyncPlugin extends Plugin {
 			return this.nunjucksEnv.renderString(template, contextData);
 		} catch (error) {
 			console.error('Template rendering error:', error);
-			return `Template Error: ${error.message}`;
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			return `Template Error: ${errorMessage}`;
 		}
 	}
 
@@ -456,6 +507,65 @@ export default class ScreviSyncPlugin extends Plugin {
 			.replace('YYYY', String(year))
 			.replace('MM', month)
 			.replace('DD', day);
+	}
+
+	decodeHtmlEntities(text: string): string {
+		if (!text) return text;
+		
+		// Common HTML entities that might appear in content
+		const entities: { [key: string]: string } = {
+			'&amp;': '&',
+			'&lt;': '<',
+			'&gt;': '>',
+			'&quot;': '"',
+			'&#39;': "'",
+			'&apos;': "'",
+			'&nbsp;': ' ',
+			'&ndash;': '\u2013',
+			'&mdash;': '\u2014',
+			'&hellip;': '\u2026',
+			'&lsquo;': '\u2018',
+			'&rsquo;': '\u2019',
+			'&ldquo;': '\u201c',
+			'&rdquo;': '\u201d'
+		};
+
+		let decoded = text;
+
+		// First handle JSON escape sequences
+		decoded = decoded
+			.replace(/\\n/g, '\n')      // Newlines
+			.replace(/\\t/g, '\t')      // Tabs  
+			.replace(/\\r/g, '\r')      // Carriage returns
+			.replace(/\\"/g, '"')       // Escaped quotes
+			.replace(/\\\\/g, '\\');    // Escaped backslashes (do this last)
+
+		// Replace named HTML entities
+		for (const [entity, replacement] of Object.entries(entities)) {
+			decoded = decoded.replace(new RegExp(entity, 'g'), replacement);
+		}
+
+		// Replace numeric entities (like &#39; &#8217; etc.)
+		decoded = decoded.replace(/&#(\d+);/g, (match, num) => {
+			return String.fromCharCode(parseInt(num, 10));
+		});
+
+		// Replace hex entities (like &#x27; etc.)
+		decoded = decoded.replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => {
+			return String.fromCharCode(parseInt(hex, 16));
+		});
+
+		return decoded;
+	}
+
+	formatAsBlockquote(text: string): string {
+		if (!text || !text.trim()) return text;
+		
+		// Split by line breaks and add > to each line
+		return text.trim().split('\n').map(line => {
+			// Handle empty lines by adding just ">"
+			return line.trim() ? `> ${line}` : '>';
+		}).join('\n');
 	}
 
 
@@ -526,7 +636,8 @@ export default class ScreviSyncPlugin extends Plugin {
 			}).open();
 		} catch (error) {
 			console.error('Error fetching sources:', error);
-			new Notice('Failed to fetch sources: ' + error.message);
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			new Notice('Failed to fetch sources: ' + errorMessage);
 			this.updateStatusBar('Ready');
 		}
 	}
@@ -713,7 +824,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		containerEl.createEl('h2', {text: 'Screvi Sync Settings'});
 
-		// Connection Settings
+		// API Key
 		new Setting(containerEl)
 			.setName('Screvi API Key')
 			.setDesc('Your Screvi API key for authentication')
@@ -725,20 +836,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		// Sync Settings
-		containerEl.createEl('h3', {text: 'Sync Settings'});
-
-		new Setting(containerEl)
-			.setName('Default Folder')
-			.setDesc('Folder where Screvi highlights will be saved')
-			.addText(text => text
-				.setPlaceholder('Screvi Highlights')
-				.setValue(this.plugin.settings.defaultFolder)
-				.onChange(async (value) => {
-					this.plugin.settings.defaultFolder = value;
-					await this.plugin.saveSettings();
-				}));
-
+		// Auto Sync
 		new Setting(containerEl)
 			.setName('Auto Sync')
 			.setDesc('Automatically sync highlights at regular intervals')
@@ -748,68 +846,59 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 					this.plugin.settings.autoSync = value;
 					await this.plugin.saveSettings();
 					this.plugin.setupAutoSync();
+					this.display(); // Refresh settings to show/hide interval
 				}));
 
-		new Setting(containerEl)
-			.setName('Sync Interval (hours)')
-			.setDesc('How often to automatically sync highlights')
-			.addSlider(slider => slider
-				.setLimits(1, 24, 1)
-				.setValue(this.plugin.settings.syncInterval)
-				.setDynamicTooltip()
-				.onChange(async (value) => {
-					this.plugin.settings.syncInterval = value;
-					await this.plugin.saveSettings();
-					this.plugin.setupAutoSync();
-				}));
-
-		// Organization Settings
-		containerEl.createEl('h3', {text: 'Organization Settings'});
-
-		new Setting(containerEl)
-			.setName('Enable Auto-Linking')
-			.setDesc('Automatically wrap specified fields in bidirectional links [[]]')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.enableAutoLinking)
-				.onChange(async (value) => {
-					this.plugin.settings.enableAutoLinking = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Auto-Link Fields')
-			.setDesc('Comma-separated list of fields to auto-link (e.g., author, source, title)')
-			.addText(text => text
-				.setPlaceholder('author, source, title')
-				.setValue(this.plugin.settings.autoLinkFields.join(', '))
-				.onChange(async (value) => {
-					// Parse comma-separated values and trim whitespace
-					this.plugin.settings.autoLinkFields = value
-						.split(',')
-						.map(field => field.trim())
-						.filter(field => field.length > 0);
-					await this.plugin.saveSettings();
-				}));
+		// Sync Interval (only show if auto sync is enabled)
+		if (this.plugin.settings.autoSync) {
+			new Setting(containerEl)
+				.setName('Sync Interval')
+				.setDesc('How often to automatically sync highlights')
+				.addSlider(slider => slider
+					.setLimits(1, 24, 1)
+					.setValue(this.plugin.settings.syncInterval)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.syncInterval = value;
+						await this.plugin.saveSettings();
+						this.plugin.setupAutoSync();
+					}));
+		}
 
 		// Sync Actions
 		containerEl.createEl('h3', {text: 'Actions'});
 
 		new Setting(containerEl)
-			.setName('Manual Sync')
-			.setDesc('Sync highlights now')
+			.setName('Sync Now')
+			.setDesc('Manually sync highlights from Screvi')
 			.addButton(button => button
-				.setButtonText('Sync Now')
-				.onClick(() => {
-					this.plugin.syncHighlights();
+				.setButtonText('Sync')
+				.setCta()
+				.onClick(async () => {
+					button.setButtonText('Syncing...');
+					button.setDisabled(true);
+					try {
+						await this.plugin.syncHighlights();
+					} finally {
+						button.setButtonText('Sync');
+						button.setDisabled(false);
+					}
 				}));
 
 		new Setting(containerEl)
-			.setName('Force Full Sync')
+			.setName('Full Sync')
 			.setDesc('Re-sync all highlights (ignores last sync time)')
 			.addButton(button => button
 				.setButtonText('Full Sync')
-				.onClick(() => {
-					this.plugin.syncHighlights(true);
+				.onClick(async () => {
+					button.setButtonText('Syncing...');
+					button.setDisabled(true);
+					try {
+						await this.plugin.syncHighlights(true);
+					} finally {
+						button.setButtonText('Full Sync');
+						button.setDisabled(false);
+					}
 				}));
 
 		// Last Sync Info

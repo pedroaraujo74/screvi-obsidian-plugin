@@ -1,9 +1,13 @@
+export type SourceType = 'book' | 'tweet' | 'self' | 'article' | 'youtube';
+
+export const VALID_SOURCE_TYPES: SourceType[] = ['book', 'tweet', 'self', 'article', 'youtube'];
+
 export interface ScreviHighlight {
 	id?: string;
 	content: string;
 	note?: string;
 	source?: string;
-	sourceType?: string;
+	sourceType?: SourceType | string;
 	title?: string;
 	author?: string;
 	url?: string;
@@ -22,7 +26,7 @@ export interface ScreviHighlight {
 export interface Source {
 	id: string;
 	name: string;
-	type: string;
+	type: SourceType | string;
 	author?: string;
 	url?: string;
 	highlights: ScreviHighlight[];

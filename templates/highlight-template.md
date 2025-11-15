@@ -1,32 +1,17 @@
-{% if author %}
 **Author:** {{author}}
-{% endif %}
+{% if url %}**URL:** [{{title}}]({{url}}){% endif %}
 
-{% if url %}
-**URL:** [{{title}}]({{url}})
-{% endif %}
-
-{% if chapter %}
-**Chapter:** {{chapter}}
-{% endif %}
-
-{% if page %}
-**Page:** {{page}}
-{% endif %}
-
-**Date:** {{created_at | date("YYYY-MM-DD")}}
-
----
-
-> {{content}}
-
+{{content | blockquote}}
 {%- if note %}
+
 **Note:** {{note}}
-{% endif %}
-
+{%- endif %}
+{%- if chapter %}
+**Chapter:** {{chapter}}
+{%- endif %}
+{%- if page %}
+**Page:** {{page}}
+{%- endif %}
 {%- if tags %}
-{% for tag in tags %}{{tag.name}}{% if not loop.last %}, {% endif %}{% endfor %}
-{% endif %}
-
----
-*Synced from Screvi*
+{% for tag in tags %}#{{tag.name}}{% if not loop.last %}, {% endif %}{% endfor %}
+{%- endif %}

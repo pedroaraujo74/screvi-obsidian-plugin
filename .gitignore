@@ -1,4 +1,4 @@
-w# Logs
+# Logs
 logs
 *.log
 npm-debug.log*
@@ -113,3 +113,6 @@ main.js.map
 .DS_Store
 Thumbs.db
 Screvi Highlights/
+
+# User data (contains API keys)
+data.json

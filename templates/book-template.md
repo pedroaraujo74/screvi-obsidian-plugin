@@ -4,7 +4,7 @@
 ## Highlights
 
 {% for highlight in highlights %}
-> {{highlight.content}}
+{{highlight.content | blockquote}}
 {%- if highlight.note %}
 
 **Note:** {{highlight.note}}
