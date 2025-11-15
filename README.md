@@ -1,6 +1,6 @@
 # Screvi Obsidian Plugin 
 
-This official plugin maintained by the Screvi team enables you to easily and automatically export all your highlights from Screvi to Obsidian.
+This official plugin maintained by the Screvi team enables you to easily and automatically export all your highlights from [Screvi](https://screvi.com/) to Obsidian.
 
 ## Features
 
