@@ -1,9 +1,9 @@
 {
   "id": "screvi",
-  "name": "Screvi Official",
+  "name": "Screvi Sync",
   "version": "1.0.1",
   "minAppVersion": "0.15.0",
-  "description": "Official Screvi plugin for Obsidian - import your highlights from Screvi to Obsidian",
+  "description": "Import highlights and sources from Screvi",
   "author": "Screvi Team",
   "authorUrl": "https://screvi.com",
   "isDesktopOnly": false
