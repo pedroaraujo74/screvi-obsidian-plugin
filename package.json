@@ -30,7 +30,6 @@
   "dependencies": {
     "@types/mustache": "^4.2.6",
     "@types/nunjucks": "^3.2.6",
-    "mustache": "^4.2.0",
     "nunjucks": "^3.2.4"
   }
 }
