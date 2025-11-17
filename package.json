@@ -17,9 +17,7 @@
   ],
   "author": "Pedro",
   "license": "MIT",
-  "engines": {
-    "node": ">=22.0.0"
-  },
+
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "5.29.0",
