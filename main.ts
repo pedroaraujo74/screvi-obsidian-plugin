@@ -99,17 +99,14 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async loadBookTemplate(): Promise<string> {
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
-			const fs = require('fs');
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
-			const path = require('path');
+			// Try to read template from vault's plugin directory
+			// Use configDir instead of hardcoding .obsidian
+			const configDir = this.app.vault.configDir;
+			const templatePath = `${configDir}/plugins/obsidian-screvi-plugin/templates/book-template.md`;
+			const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
 			
-			// Get the plugin directory path
-			const pluginDir = (this.app.vault.adapter as any).basePath + '/.obsidian/plugins/obsidian-screvi-plugin';
-			const bookTemplatePath = path.join(pluginDir, 'templates', 'book-template.md');
-			
-			if (fs.existsSync(bookTemplatePath)) {
-				return fs.readFileSync(bookTemplatePath, 'utf8');
+			if (templateFile instanceof TFile) {
+				return await this.app.vault.read(templateFile);
 			}
 		} catch (error) {
 			console.error('Error loading book template:', error);
@@ -523,7 +520,7 @@ export default class ScreviSyncPlugin extends Plugin {
 		// Replace spaces with hyphens, remove special characters except underscores and hyphens
 		return tagName
 			.replace(/\s+/g, '-')           // Replace spaces with hyphens
-			.replace(/[^\w\-\/]/g, '')      // Keep only letters, numbers, underscores, hyphens, and forward slashes
+			.replace(/[^\w\-/]/g, '')      // Keep only letters, numbers, underscores, hyphens, and forward slashes
 			.replace(/\/+/g, '/')           // Collapse multiple slashes
 			.replace(/^\/|\/$/g, '')        // Remove leading/trailing slashes
 			.toLowerCase();                 // Convert to lowercase for consistency
@@ -556,12 +553,12 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName('Screvi sync settings')
+			.setName('Sync configuration')
 			.setHeading();
 
 		// API Key
 		const apiKeySetting = new Setting(containerEl)
-			.setName('Screvi API key')
+			.setName('API key')
 			.setDesc('Your Screvi API key for authentication. ');
 		
 		apiKeySetting.descEl.createEl('a', {
@@ -580,7 +577,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		// Auto Sync
 		new Setting(containerEl)
 			.setName('Auto sync')
-			.setDesc('Automatically sync highlights at regular intervals')
+			.setDesc('Automatically sync highlights at regular intervals.')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.autoSync)
 				.onChange(async (value) => {
@@ -594,7 +591,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		if (this.plugin.settings.autoSync) {
 			new Setting(containerEl)
 				.setName('Sync interval')
-				.setDesc('How often to automatically sync highlights (hours)')
+				.setDesc('How often to automatically sync highlights (hours).')
 				.addSlider(slider => slider
 					.setLimits(1, 24, 1)
 					.setValue(this.plugin.settings.syncInterval)
@@ -613,7 +610,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Sync now')
-			.setDesc('Manually sync highlights from Screvi')
+			.setDesc('Manually sync highlights from Screvi.')
 			.addButton(button => button
 				.setButtonText('Sync')
 				.setCta()
@@ -632,7 +629,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Full sync')
-			.setDesc('Re-sync all highlights (ignores last sync time)')
+			.setDesc('Re-sync all highlights (ignores last sync time).')
 			.addButton(button => button
 				.setButtonText('Full sync')
 				.onClick(async () => {

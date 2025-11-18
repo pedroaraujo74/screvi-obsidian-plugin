@@ -16,7 +16,17 @@ export class ScreviApiClient {
 		if (params) {
 			Object.entries(params).forEach(([key, value]) => {
 				if (value !== undefined && value !== null) {
-					url.searchParams.append(key, String(value));
+					// Convert value to string, handling objects and arrays properly
+					let stringValue: string;
+					if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+						stringValue = String(value);
+					} else if (value instanceof Date) {
+						stringValue = value.toISOString();
+					} else {
+						// For objects and arrays, use JSON.stringify
+						stringValue = JSON.stringify(value);
+					}
+					url.searchParams.append(key, stringValue);
 				}
 			});
 		}
