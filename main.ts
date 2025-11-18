@@ -121,11 +121,6 @@ export default class ScreviSyncPlugin extends Plugin {
 		}
 	}
 
-	async loadBookTemplate(): Promise<string> {
-		// Return embedded template content
-		// Templates are bundled with the plugin code
-		return BOOK_TEMPLATE;
-	}
 
 
 
@@ -147,7 +142,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async syncHighlights(fullSync: boolean = false) {
 		if (!this.settings.apiKey) {
-			new Notice('Please set your Screvi api key in plugin settings');
+			new Notice('Please set your Screvi API key in plugin settings');
 			return;
 		}
 
@@ -262,8 +257,7 @@ export default class ScreviSyncPlugin extends Plugin {
 					highlights: sourceHighlights
 				};
 				
-				const bookTemplate = await this.loadBookTemplate();
-				const content = this.renderTemplate(bookTemplate, templateData);
+				const content = this.renderTemplate(BOOK_TEMPLATE, templateData);
 				await this.app.vault.create(filePath, content);
 			}
 		}
@@ -271,7 +265,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	groupHighlightsBySource(highlights: ScreviHighlight[]): Record<string, ScreviHighlight[]> {
 		return highlights.reduce((groups, highlight) => {
-			const source = highlight.source || 'Unknown Source';
+			const source = highlight.source || 'Unknown source';
 			if (!groups[source]) {
 				groups[source] = [];
 			}
@@ -571,16 +565,16 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		// API Key
 		const apiKeySetting = new Setting(containerEl)
-			.setName('Api key')
-			.setDesc('Your Screvi api key for authentication. ');
+			.setName('API key')
+			.setDesc('Your Screvi API key for authentication. ');
 		
 		apiKeySetting.descEl.createEl('a', {
-			text: 'Get your api key',
+			text: 'Get your API key',
 			href: 'https://app.screvi.com/settings/api'
 		});
 		
 		apiKeySetting.addText(text => text
-			.setPlaceholder('Enter your api key')
+			.setPlaceholder('Enter your API key')
 			.setValue(this.plugin.settings.apiKey)
 			.onChange(async (value) => {
 				this.plugin.settings.apiKey = value;
