@@ -27,6 +27,30 @@ const DEFAULT_SETTINGS: ScreviSyncSettings = {
 	enableAutoLinking: true
 }
 
+const BOOK_TEMPLATE = `**Author:** {{author}}
+{% if url %}**URL:** [{{title}}]({{url}}){% endif %}
+
+## Highlights
+
+{% for highlight in highlights %}
+{{highlight.content | blockquote}}
+{%- if highlight.note %}
+
+**Note:** {{highlight.note}}
+{%- endif %}
+{%- if highlight.chapter %}
+**Chapter:** {{highlight.chapter}}
+{%- endif %}
+{%- if highlight.page %}
+**Page:** {{highlight.page}}
+{%- endif %}
+{%- if highlight.tags %}
+{% for tag in highlight.tags %}#{{tag.name}}{% if not loop.last %}, {% endif %}{% endfor %}
+{%- endif %}
+
+---
+{% endfor %}`
+
 export default class ScreviSyncPlugin extends Plugin {
 	settings: ScreviSyncSettings;
 	syncInterval: NodeJS.Timeout | null = null;
@@ -98,20 +122,9 @@ export default class ScreviSyncPlugin extends Plugin {
 	}
 
 	async loadBookTemplate(): Promise<string> {
-		try {
-			// Try to read template from vault's plugin directory
-			// Use configDir instead of hardcoding .obsidian
-			const configDir = this.app.vault.configDir;
-			const templatePath = `${configDir}/plugins/obsidian-screvi-plugin/templates/book-template.md`;
-			const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-			
-			if (templateFile instanceof TFile) {
-				return await this.app.vault.read(templateFile);
-			}
-		} catch (error) {
-			console.error('Error loading book template:', error);
-		}
-		return '';
+		// Return embedded template content
+		// Templates are bundled with the plugin code
+		return BOOK_TEMPLATE;
 	}
 
 
@@ -134,7 +147,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async syncHighlights(fullSync: boolean = false) {
 		if (!this.settings.apiKey) {
-			new Notice('Please set your Screvi API key in plugin settings');
+			new Notice('Please set your Screvi api key in plugin settings');
 			return;
 		}
 
@@ -558,16 +571,16 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		// API Key
 		const apiKeySetting = new Setting(containerEl)
-			.setName('API key')
-			.setDesc('Your Screvi API key for authentication. ');
+			.setName('Api key')
+			.setDesc('Your Screvi api key for authentication. ');
 		
 		apiKeySetting.descEl.createEl('a', {
-			text: 'Get your API key',
+			text: 'Get your api key',
 			href: 'https://app.screvi.com/settings/api'
 		});
 		
 		apiKeySetting.addText(text => text
-			.setPlaceholder('Enter your API key')
+			.setPlaceholder('Enter your api key')
 			.setValue(this.plugin.settings.apiKey)
 			.onChange(async (value) => {
 				this.plugin.settings.apiKey = value;
