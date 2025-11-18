@@ -142,7 +142,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async syncHighlights(fullSync: boolean = false) {
 		if (!this.settings.apiKey) {
-			new Notice('Please set your Screvi API key in plugin settings');
+			new Notice('Please set your screvi API key in plugin settings');
 			return;
 		}
 
@@ -566,7 +566,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		// API Key
 		const apiKeySetting = new Setting(containerEl)
 			.setName('API key')
-			.setDesc('Your Screvi API key for authentication. ');
+			.setDesc('Your screvi API key for authentication. ');
 		
 		apiKeySetting.descEl.createEl('a', {
 			text: 'Get your API key',
@@ -617,7 +617,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Sync now')
-			.setDesc('Manually sync highlights from Screvi.')
+			.setDesc('Manually sync highlights from screvi.')
 			.addButton(button => button
 				.setButtonText('Sync')
 				.setCta()
