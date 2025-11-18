@@ -7,7 +7,7 @@ export interface ScreviHighlight {
 	content: string;
 	note?: string;
 	source?: string;
-	sourceType?: SourceType | string;
+	sourceType?: string;
 	title?: string;
 	author?: string;
 	url?: string;
@@ -20,31 +20,14 @@ export interface ScreviHighlight {
 	location?: string;
 	color?: string;
 	book_id?: string;
-	metadata?: any;
+	metadata?: Record<string, unknown>;
 }
 
 export interface Source {
 	id: string;
 	name: string;
-	type: SourceType | string;
+	type: string;
 	author?: string;
 	url?: string;
 	highlights: ScreviHighlight[];
 }
-
-export interface PaginationInfo {
-	page: number;
-	totalPages: number;
-	totalSources: number;
-	hasMore: boolean;
-}
-
-export interface PaginatedResponse {
-	data: Source[];
-	pagination: PaginationInfo;
-}
-
-export interface ApiResponse<T> {
-	data: T;
-	pagination?: PaginationInfo;
-} 

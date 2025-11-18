@@ -1,9 +1,9 @@
 {
-  "apiKey": "dzrt",
+  "apiKey": "",
   "syncInterval": 120,
   "defaultFolder": "Screvi Highlights",
   "autoSync": true,
-  "lastSyncTime": 1763244873487,
+  "lastSyncTime": 1763464873462,
   "includeMetadata": true,
   "tagPrefix": "screvi/",
   "autoLinkFields": [

@@ -1,4 +1,5 @@
-import { ScreviHighlight, Source, PaginatedResponse } from './types';
+import { requestUrl } from 'obsidian';
+import { ScreviHighlight } from './types';
 
 export class ScreviApiClient {
 	private apiKey: string;
@@ -9,7 +10,7 @@ export class ScreviApiClient {
 		this.apiUrl = apiUrl;
 	}
 
-	private async makeRequest<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
+	private async makeRequest<T>(endpoint: string, params?: Record<string, unknown>): Promise<T> {
 		const url = new URL(`${this.apiUrl}${endpoint}`);
 		
 		if (params) {
@@ -20,18 +21,19 @@ export class ScreviApiClient {
 			});
 		}
 
-		const response = await fetch(url.toString(), {
+		const response = await requestUrl({
+			url: url.toString(),
 			headers: {
 				'X-API-Key': this.apiKey,
 				'Content-Type': 'application/json'
 			}
 		});
 
-		if (!response.ok) {
-			throw new Error(`API request failed: ${response.statusText}`);
+		if (response.status < 200 || response.status >= 300) {
+			throw new Error(`API request failed: ${response.status}`);
 		}
 
-		return response.json();
+		return response.json as T;
 	}
 
 	private decodeHtmlEntities(text: string): string {
@@ -85,70 +87,14 @@ export class ScreviApiClient {
 		return decoded;
 	}
 
-	async fetchAllHighlights(format: string = 'markdown'): Promise<ScreviHighlight[]> {
-		let allSources: any[] = [];
-		let currentPage = 1;
-		let hasMore = true;
-
-		// Fetch all pages using consistent endpoint
-		while (hasMore) {
-			const response = await this.makeRequest<any>('/api/highlights/export', {
-				format,
-				page: currentPage
-			});
-
-			// Handle both possible response structures
-			const responseData = response.data || response;
-			allSources = [...allSources, ...responseData];
-			
-			hasMore = response.pagination?.hasMore || false;
-			currentPage++;
-		}
-
-		// Flatten all highlights from all sources
-		const allHighlights: ScreviHighlight[] = [];
-		for (const source of allSources) {
-			if (source.highlights && Array.isArray(source.highlights)) {
-				for (const highlight of source.highlights) {
-					// Create a properly mapped highlight based on actual database schema
-					const mappedHighlight: ScreviHighlight = {
-						// Map actual database fields to interface
-						id: highlight.id,
-						content: this.decodeHtmlEntities(highlight.content),
-						note: highlight.notes, // Database uses 'notes', interface expects 'note'
-						source: source.name, // Use source name from parent object
-						sourceType: source.type, // Use source type from parent object
-						title: this.decodeHtmlEntities(source.name), // Use source name as title for highlights
-						author: highlight.author || source.author, // Highlight has author field
-						url: highlight.url || source.url,
-						date: highlight.created_at || source.created_at,
-						created_at: highlight.created_at || source.created_at,
-						updated_at: highlight.updated_at || source.updated_at,
-						tags: highlight.tags,
-						chapter: highlight.chapter,
-						page: highlight.page,
-						location: highlight.location,
-						color: highlight.color,
-						book_id: highlight.book_id,
-						metadata: highlight.metadata
-					};
-					
-					allHighlights.push(mappedHighlight);
-				}
-			}
-		}
-
-		return allHighlights;
-	}
-
 	async fetchHighlightsSince(start_from?: number, format: string = 'markdown'): Promise<ScreviHighlight[]> {
-		let allSources: any[] = [];
+		let allSources: unknown[] = [];
 		let currentPage = 1;
 		let hasMore = true;
 
 		// Fetch all pages with start_from parameter using consistent endpoint
 		while (hasMore) {
-			const params: Record<string, any> = {
+			const params: Record<string, unknown> = {
 				format,
 				page: currentPage
 			};
@@ -158,42 +104,44 @@ export class ScreviApiClient {
 				params.start_from = new Date(start_from).toISOString();
 			}
 
-			const response = await this.makeRequest<any>('/api/highlights/export', params);
+			const response = await this.makeRequest<{ data?: unknown[]; pagination?: { hasMore?: boolean } } | unknown[]>('/api/highlights/export', params);
 
 			// Handle both possible response structures
-			const responseData = response.data || response;
+			const responseData = Array.isArray(response) ? response : (response as { data?: unknown[] }).data || [];
 			allSources = [...allSources, ...responseData];
 			
-			hasMore = response.pagination?.hasMore || false;
+			hasMore = !Array.isArray(response) && (response as { pagination?: { hasMore?: boolean } }).pagination?.hasMore || false;
 			currentPage++;
 		}
 
 		// Flatten all highlights from all sources
 		const allHighlights: ScreviHighlight[] = [];
 		for (const source of allSources) {
-			if (source.highlights && Array.isArray(source.highlights)) {
-				for (const highlight of source.highlights) {
+			const sourceObj = source as { highlights?: unknown[]; name?: string; type?: string; author?: string; url?: string; created_at?: string };
+			if (sourceObj.highlights && Array.isArray(sourceObj.highlights)) {
+				for (const highlight of sourceObj.highlights) {
+					const highlightObj = highlight as Record<string, unknown>;
 					// Create a properly mapped highlight based on actual database schema
 					const mappedHighlight: ScreviHighlight = {
 						// Map actual database fields to interface
-						id: highlight.id,
-						content: this.decodeHtmlEntities(highlight.content),
-						note: highlight.notes, // Database uses 'notes', interface expects 'note'
-						source: source.name, // Use source name from parent object
-						sourceType: source.type, // Use source type from parent object
-						title: this.decodeHtmlEntities(source.name), // Use source name as title for highlights
-						author: highlight.author || source.author, // Highlight has author field
-						url: highlight.url || source.url,
-						date: highlight.created_at || source.created_at,
-						created_at: highlight.created_at || source.created_at,
-						updated_at: highlight.updated_at || source.updated_at,
-						tags: highlight.tags,
-						chapter: highlight.chapter,
-						page: highlight.page,
-						location: highlight.location,
-						color: highlight.color,
-						book_id: highlight.book_id,
-						metadata: highlight.metadata
+						id: highlightObj.id as string | undefined,
+						content: this.decodeHtmlEntities(highlightObj.content as string || ''),
+						note: highlightObj.notes as string | undefined, // Database uses 'notes', interface expects 'note'
+						source: sourceObj.name, // Use source name from parent object
+						sourceType: sourceObj.type, // Use source type from parent object
+						title: this.decodeHtmlEntities(sourceObj.name || ''), // Use source name as title for highlights
+						author: (highlightObj.author || sourceObj.author) as string | undefined, // Highlight has author field
+						url: (highlightObj.url || sourceObj.url) as string | undefined,
+						date: (highlightObj.created_at || sourceObj.created_at) as string || '',
+						created_at: (highlightObj.created_at || sourceObj.created_at) as string | undefined,
+						updated_at: highlightObj.updated_at as string | undefined,
+						tags: highlightObj.tags as string[] | undefined,
+						chapter: highlightObj.chapter as string | undefined,
+						page: highlightObj.page as number | undefined,
+						location: highlightObj.location as string | undefined,
+						color: highlightObj.color as string | undefined,
+						book_id: highlightObj.book_id as string | undefined,
+						metadata: highlightObj.metadata as Record<string, unknown> | undefined
 					};
 					
 					allHighlights.push(mappedHighlight);
@@ -204,39 +152,8 @@ export class ScreviApiClient {
 		return allHighlights;
 	}
 
-	async fetchSources(): Promise<Source[]> {
-		let allSources: any[] = [];
-		let currentPage = 1;
-		let hasMore = true;
-
-		while (hasMore) {
-			const response = await this.makeRequest<any>('/api/highlights/export', {
-				format: 'markdown',
-				page: currentPage
-			});
-
-			// Handle both possible response structures
-			const responseData = response.data || response;
-			allSources = [...allSources, ...responseData];
-			
-			hasMore = response.pagination?.hasMore || false;
-			currentPage++;
-		}
-
-		// Map sources to expected interface
-		return allSources.map(source => ({
-			id: source.id || source.asin || source.name,
-			name: this.decodeHtmlEntities(source.name),
-			type: source.type,
-			author: this.decodeHtmlEntities(source.author),
-			url: source.url,
-			highlights: source.highlights || []
-		}));
-	}
-
 	updateCredentials(apiKey: string, apiUrl: string) {
 		this.apiKey = apiKey;
 		this.apiUrl = apiUrl;
 	}
-} 
-
+}

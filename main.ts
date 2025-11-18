@@ -1,5 +1,5 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, SuggestModal, FuzzySuggestModal } from 'obsidian';
-import { ScreviApiClient, ScreviHighlight, Source, VALID_SOURCE_TYPES } from './src/api';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { ScreviApiClient, ScreviHighlight, SourceType, VALID_SOURCE_TYPES } from './src/api';
 import * as nunjucks from 'nunjucks';
 
 interface ScreviSyncSettings {
@@ -52,29 +52,10 @@ export default class ScreviSyncPlugin extends Plugin {
 
 		// Commands
 		this.addCommand({
-			id: 'sync-screvi-highlights',
-			name: 'Sync Screvi highlights',
+			id: 'sync-highlights',
+			name: 'Sync highlights',
 			callback: async () => {
 				await this.syncHighlights();
-			}
-		});
-
-		this.addCommand({
-			id: 'insert-screvi-highlight',
-			name: 'Insert Screvi highlight',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				this.insertHighlightModal(editor);
-			}
-		});
-
-		this.addCommand({
-			id: 'search-screvi-highlights',
-			name: 'Search Screvi highlights',
-			callback: () => {
-				new ScreviSearchModal(this.app, this.highlights, (highlight) => {
-					// Open or create note with the highlight
-					this.openHighlight(highlight);
-				}).open();
 			}
 		});
 
@@ -83,14 +64,6 @@ export default class ScreviSyncPlugin extends Plugin {
 			name: 'Force full sync',
 			callback: async () => {
 				await this.syncHighlights(true);
-			}
-		});
-
-		this.addCommand({
-			id: 'browse-sources',
-			name: 'Browse sources',
-			callback: () => {
-				this.browseSourcesModal();
 			}
 		});
 
@@ -124,27 +97,11 @@ export default class ScreviSyncPlugin extends Plugin {
 		}
 	}
 
-	async loadHighlightTemplate(): Promise<string> {
-		try {
-			const fs = require('fs');
-			const path = require('path');
-			
-			// Get the plugin directory path
-			const pluginDir = (this.app.vault.adapter as any).basePath + '/.obsidian/plugins/obsidian-screvi-plugin';
-			const highlightTemplatePath = path.join(pluginDir, 'templates', 'highlight-template.md');
-			
-			if (fs.existsSync(highlightTemplatePath)) {
-				return fs.readFileSync(highlightTemplatePath, 'utf8');
-			}
-		} catch (error) {
-			console.error('Error loading highlight template:', error);
-		}
-		return '';
-	}
-
 	async loadBookTemplate(): Promise<string> {
 		try {
+			// eslint-disable-next-line @typescript-eslint/no-var-requires
 			const fs = require('fs');
+			// eslint-disable-next-line @typescript-eslint/no-var-requires
 			const path = require('path');
 			
 			// Get the plugin directory path
@@ -173,7 +130,7 @@ export default class ScreviSyncPlugin extends Plugin {
 		
 		if (this.settings.autoSync && this.settings.syncInterval > 0) {
 			this.syncInterval = setInterval(() => {
-				this.syncHighlights();
+				void this.syncHighlights();
 			}, this.settings.syncInterval * 60 * 60 * 1000);
 		}
 	}
@@ -316,10 +273,10 @@ export default class ScreviSyncPlugin extends Plugin {
 	groupHighlightsBySourceType(highlights: ScreviHighlight[]): Record<string, ScreviHighlight[]> {
 		return highlights.reduce((groups, highlight) => {
 			// Use the source type from the API, defaulting to 'self' if not available
-			let sourceType = highlight.sourceType || 'self';
+			let sourceType: string = highlight.sourceType || 'self';
 			
 			// Map to the exact folder types: "book", "tweet", "self", "article", "youtube"
-			if (!VALID_SOURCE_TYPES.includes(sourceType as any)) {
+			if (typeof sourceType === 'string' && !VALID_SOURCE_TYPES.includes(sourceType as SourceType)) {
 				sourceType = 'self'; // Default fallback
 			}
 			
@@ -344,22 +301,6 @@ export default class ScreviSyncPlugin extends Plugin {
 		});
 	}
 
-	generateFileName(highlight: ScreviHighlight): string {
-		const source = this.sanitizeFileName(highlight.source || 'Unknown Source');
-		const timestamp = new Date(highlight.created_at || highlight.date).toISOString().split('T')[0];
-		const id = highlight.id ? highlight.id.slice(-8) : Math.random().toString(36).substr(2, 8);
-		return `${source}_${timestamp}_${id}`;
-	}
-
-	formatHighlightContent(content: string): string {
-		if (!content) return content;
-		
-		return content
-			.trim()
-			.split('\n')
-			.map(line => line.trim() ? `> ${line.trim()}` : '>')
-			.join('\n');
-	}
 
 	getSourceTypeDisplayName(sourceType: string): string {
 		// Map source types to user-friendly display names
@@ -379,7 +320,7 @@ export default class ScreviSyncPlugin extends Plugin {
 		// Keep spaces, letters, numbers, common punctuation
 		return name
 			.replace(/[<>:"|?*]/g, '')      // Remove Windows forbidden characters
-			.replace(/[\/\\]/g, '-')        // Replace path separators with hyphens
+			.replace(/[/\\]/g, '-')        // Replace path separators with hyphens
 			.replace(/\.+$/g, '')           // Remove trailing dots (Windows issue)
 			.trim();                        // Remove leading/trailing whitespace
 	}
@@ -454,7 +395,7 @@ export default class ScreviSyncPlugin extends Plugin {
 		});
 	}
 
-	renderTemplate(template: string, data: any): string {
+	renderTemplate(template: string, data: Record<string, unknown>): string {
 		try {
 			// Add tag_prefix to the data context
 			const contextData = {
@@ -481,16 +422,23 @@ export default class ScreviSyncPlugin extends Plugin {
 		}
 	}
 
-	getNestedValue(obj: any, path: string): any {
-		return path.split('.').reduce((current, key) => current && current[key], obj);
+	getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+		return path.split('.').reduce((current, key) => {
+			if (current && typeof current === 'object' && key in current) {
+				return (current as Record<string, unknown>)[key];
+			}
+			return undefined;
+		}, obj as unknown);
 	}
 
-	setNestedValue(obj: any, path: string, value: any): void {
+	setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {
 		const keys = path.split('.');
 		const lastKey = keys.pop();
 		const target = keys.reduce((current, key) => {
-			if (!current[key]) current[key] = {};
-			return current[key];
+			if (!current[key] || typeof current[key] !== 'object') {
+				current[key] = {};
+			}
+			return current[key] as Record<string, unknown>;
 		}, obj);
 		if (lastKey) {
 			target[lastKey] = value;
@@ -592,221 +540,6 @@ export default class ScreviSyncPlugin extends Plugin {
 		await this.saveData(data);
 	}
 
-	async openHighlight(highlight: ScreviHighlight) {
-		const fileName = this.generateFileName(highlight);
-		const filePath = `${this.settings.defaultFolder}/${fileName}.md`;
-		
-		let file = this.app.vault.getAbstractFileByPath(filePath);
-		
-		if (!file) {
-					// Create the file if it doesn't exist
-		const highlightTemplate = await this.loadHighlightTemplate();
-		const content = this.renderTemplate(highlightTemplate, highlight);
-		await this.app.vault.create(filePath, content);
-			file = this.app.vault.getAbstractFileByPath(filePath);
-		}
-
-		if (file instanceof TFile) {
-			await this.app.workspace.getLeaf().openFile(file);
-		}
-	}
-
-	async insertHighlightModal(editor: Editor) {
-		new ScreviHighlightModal(this.app, this.highlights, async (highlight) => {
-			const highlightTemplate = await this.loadHighlightTemplate();
-			const content = this.renderTemplate(highlightTemplate, highlight);
-			editor.replaceSelection(content);
-		}).open();
-	}
-
-	async browseSourcesModal() {
-		if (!this.settings.apiKey) {
-			new Notice('Please set your Screvi API key in plugin settings');
-			return;
-		}
-
-		try {
-			this.updateStatusBar('Loading sources...');
-			const sources = await this.apiClient.fetchSources();
-			this.updateStatusBar('Ready');
-			
-			new ScreviSourceModal(this.app, sources, (source) => {
-				// Create a book file for the selected source
-				this.createBookFileFromSource(source);
-			}).open();
-		} catch (error) {
-			console.error('Error fetching sources:', error);
-			const errorMessage = error instanceof Error ? error.message : String(error);
-			new Notice('Failed to fetch sources: ' + errorMessage);
-			this.updateStatusBar('Ready');
-		}
-	}
-
-	async createBookFileFromSource(source: Source) {
-		// Ensure folder exists
-		const folder = this.app.vault.getAbstractFileByPath(this.settings.defaultFolder);
-		if (!folder) {
-			await this.app.vault.createFolder(this.settings.defaultFolder);
-		}
-
-		const fileName = this.sanitizeFileName(source.name);
-		const filePath = `${this.settings.defaultFolder}/${fileName}.md`;
-		
-		const bookTemplate = await this.loadBookTemplate();
-		const content = this.renderTemplate(bookTemplate, {
-			title: source.name,
-			author: source.author || '',
-			url: source.url || '',
-			highlights: source.highlights
-		});
-
-		const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-		
-		if (existingFile instanceof TFile) {
-			await this.app.vault.modify(existingFile, content);
-			new Notice(`Updated book file: ${source.name}`);
-		} else {
-			await this.app.vault.create(filePath, content);
-			new Notice(`Created book file: ${source.name}`);
-		}
-
-		// Open the file
-		const file = this.app.vault.getAbstractFileByPath(filePath);
-		if (file instanceof TFile) {
-			await this.app.workspace.getLeaf().openFile(file);
-		}
-	}
-}
-
-class ScreviSearchModal extends FuzzySuggestModal<ScreviHighlight> {
-	highlights: ScreviHighlight[];
-	callback: (highlight: ScreviHighlight) => void;
-
-	constructor(app: App, highlights: ScreviHighlight[], callback: (highlight: ScreviHighlight) => void) {
-		super(app);
-		this.highlights = highlights;
-		this.callback = callback;
-		this.setPlaceholder("Search your Screvi highlights...");
-	}
-
-	getItems(): ScreviHighlight[] {
-		return this.highlights;
-	}
-
-	getItemText(highlight: ScreviHighlight): string {
-		const content = highlight.content || '';
-		return `${highlight.source || 'Unknown Source'} - ${content.substring(0, 100)}...`;
-	}
-
-	onChooseItem(highlight: ScreviHighlight, evt: MouseEvent | KeyboardEvent) {
-		this.callback(highlight);
-	}
-}
-
-class ScreviHighlightModal extends Modal {
-	highlights: ScreviHighlight[];
-	callback: (highlight: ScreviHighlight) => void;
-
-	constructor(app: App, highlights: ScreviHighlight[], callback: (highlight: ScreviHighlight) => void) {
-		super(app);
-		this.highlights = highlights;
-		this.callback = callback;
-	}
-
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.createEl("h1", { text: "Insert Screvi highlight" });
-		
-		if (this.highlights.length === 0) {
-			contentEl.createEl("p", { text: "No highlights available. Please sync your highlights first." });
-			const button = contentEl.createEl("button", { text: "Close" });
-			button.onclick = () => this.close();
-			return;
-		}
-
-		const searchInput = contentEl.createEl("input", { 
-			type: "text", 
-			placeholder: "Search highlights..." 
-		});
-		searchInput.style.width = "100%";
-		searchInput.style.marginBottom = "16px";
-
-		const highlightsList = contentEl.createEl("div");
-		highlightsList.style.maxHeight = "400px";
-		highlightsList.style.overflowY = "auto";
-
-		const renderHighlights = (filter: string = '') => {
-			highlightsList.empty();
-			
-			const filteredHighlights = this.highlights.filter(h => {
-				const content = h.content || '';
-				const source = h.source || '';
-				return content.toLowerCase().includes(filter.toLowerCase()) ||
-					   source.toLowerCase().includes(filter.toLowerCase());
-			});
-
-			filteredHighlights.forEach(highlight => {
-				const item = highlightsList.createEl("div");
-				item.style.padding = "12px";
-				item.style.border = "1px solid var(--background-modifier-border)";
-				item.style.marginBottom = "8px";
-				item.style.cursor = "pointer";
-				item.style.borderRadius = "4px";
-
-				item.createEl("strong", { text: highlight.source || 'Unknown Source' });
-				const content = highlight.content || '';
-				item.createEl("p", { text: content.substring(0, 200) + "..." });
-				const date = highlight.created_at || highlight.date || new Date().toISOString();
-				item.createEl("small", { text: new Date(date).toLocaleDateString() });
-
-				item.onclick = () => {
-					this.callback(highlight);
-					this.close();
-				};
-
-				item.onmouseenter = () => {
-					item.style.backgroundColor = "var(--background-modifier-hover)";
-				};
-
-				item.onmouseleave = () => {
-					item.style.backgroundColor = "transparent";
-				};
-			});
-		};
-
-		searchInput.oninput = () => renderHighlights(searchInput.value);
-		renderHighlights();
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class ScreviSourceModal extends FuzzySuggestModal<Source> {
-	sources: Source[];
-	callback: (source: Source) => void;
-
-	constructor(app: App, sources: Source[], callback: (source: Source) => void) {
-		super(app);
-		this.sources = sources;
-		this.callback = callback;
-		this.setPlaceholder("Search your Screvi sources...");
-	}
-
-	getItems(): Source[] {
-		return this.sources;
-	}
-
-	getItemText(source: Source): string {
-		const highlightCount = source.highlights ? source.highlights.length : 0;
-		return `${source.name} (${highlightCount} highlights) - ${source.author || 'Unknown Author'}`;
-	}
-
-	onChooseItem(source: Source, evt: MouseEvent | KeyboardEvent) {
-		this.callback(source);
-	}
 }
 
 class ScreviSyncSettingTab extends PluginSettingTab {
@@ -822,19 +555,27 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Screvi Sync Settings'});
+		new Setting(containerEl)
+			.setName('Screvi sync settings')
+			.setHeading();
 
 		// API Key
-		new Setting(containerEl)
+		const apiKeySetting = new Setting(containerEl)
 			.setName('Screvi API key')
-			.setDesc('Your Screvi API key for authentication')
-			.addText(text => text
-				.setPlaceholder('Enter your API key')
-				.setValue(this.plugin.settings.apiKey)
-				.onChange(async (value) => {
-					this.plugin.settings.apiKey = value;
-					await this.plugin.saveSettings();
-				}));
+			.setDesc('Your Screvi API key for authentication. ');
+		
+		apiKeySetting.descEl.createEl('a', {
+			text: 'Get your API key',
+			href: 'https://app.screvi.com/settings/api'
+		});
+		
+		apiKeySetting.addText(text => text
+			.setPlaceholder('Enter your API key')
+			.setValue(this.plugin.settings.apiKey)
+			.onChange(async (value) => {
+				this.plugin.settings.apiKey = value;
+				await this.plugin.saveSettings();
+			}));
 
 		// Auto Sync
 		new Setting(containerEl)
@@ -853,7 +594,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		if (this.plugin.settings.autoSync) {
 			new Setting(containerEl)
 				.setName('Sync interval')
-				.setDesc('How often to automatically sync highlights')
+				.setDesc('How often to automatically sync highlights (hours)')
 				.addSlider(slider => slider
 					.setLimits(1, 24, 1)
 					.setValue(this.plugin.settings.syncInterval)
@@ -866,7 +607,9 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		}
 
 		// Sync Actions
-		containerEl.createEl('h3', {text: 'Actions'});
+		new Setting(containerEl)
+			.setName('Actions')
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Sync now')
@@ -879,6 +622,8 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 					button.setDisabled(true);
 					try {
 						await this.plugin.syncHighlights();
+					} catch (error) {
+						console.error('Sync error:', error);
 					} finally {
 						button.setButtonText('Sync');
 						button.setDisabled(false);
@@ -895,6 +640,8 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 					button.setDisabled(true);
 					try {
 						await this.plugin.syncHighlights(true);
+					} catch (error) {
+						console.error('Full sync error:', error);
 					} finally {
 						button.setButtonText('Full sync');
 						button.setDisabled(false);
