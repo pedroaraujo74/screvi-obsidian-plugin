@@ -1,11 +1,12 @@
 import { requestUrl } from 'obsidian';
-import { ScreviHighlight } from './types';
+import { ScreviHighlight, HighlightTag, API_BASE_URL } from './types';
+import { decodeHtmlEntities } from '../utils';
 
 export class ScreviApiClient {
 	private apiKey: string;
 	private apiUrl: string;
 
-	constructor(apiKey: string, apiUrl: string) {
+	constructor(apiKey: string, apiUrl: string = API_BASE_URL) {
 		this.apiKey = apiKey;
 		this.apiUrl = apiUrl;
 	}
@@ -46,58 +47,7 @@ export class ScreviApiClient {
 		return response.json as T;
 	}
 
-	private decodeHtmlEntities(text: string): string {
-		if (!text) return text;
-		
-		// Common HTML entities that might appear in content
-		const entities: { [key: string]: string } = {
-			'&amp;': '&',
-			'&lt;': '<',
-			'&gt;': '>',
-			'&quot;': '"',
-			'&#39;': "'",
-			'&apos;': "'",
-			'&nbsp;': ' ',
-			'&ndash;': '\u2013',
-			'&mdash;': '\u2014',
-			'&hellip;': '\u2026',
-			'&lsquo;': '\u2018',
-			'&rsquo;': '\u2019',
-			'&ldquo;': '\u201c',
-			'&rdquo;': '\u201d'
-		};
-
-		let decoded = text;
-
-		// First handle JSON escape sequences
-		decoded = decoded
-			.replace(/\\n/g, '\n')      // Newlines
-			.replace(/\\t/g, '\t')      // Tabs  
-			.replace(/\\r/g, '\r')      // Carriage returns
-			.replace(/\\"/g, '"')       // Escaped quotes
-			.replace(/\\\\/g, '\\');    // Escaped backslashes (do this last)
-
-		// Replace named HTML entities
-		for (const [entity, replacement] of Object.entries(entities)) {
-			if (decoded.includes(entity)) {
-				decoded = decoded.replace(new RegExp(entity, 'g'), replacement);
-			}
-		}
-
-		// Replace numeric entities (like &#39; &#8217; etc.)
-		decoded = decoded.replace(/&#(\d+);/g, (match, num) => {
-			return String.fromCharCode(parseInt(num, 10));
-		});
-
-		// Replace hex entities (like &#x27; etc.)
-		decoded = decoded.replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => {
-			return String.fromCharCode(parseInt(hex, 16));
-		});
-
-		return decoded;
-	}
-
-	async fetchHighlightsSince(start_from?: number, format: string = 'markdown'): Promise<ScreviHighlight[]> {
+	async fetchHighlightsSince(start_from?: number): Promise<ScreviHighlight[]> {
 		let allSources: unknown[] = [];
 		let currentPage = 1;
 		let hasMore = true;
@@ -105,7 +55,7 @@ export class ScreviApiClient {
 		// Fetch all pages with start_from parameter using consistent endpoint
 		while (hasMore) {
 			const params: Record<string, unknown> = {
-				format,
+				format: 'markdown',
 				page: currentPage
 			};
 			
@@ -120,7 +70,9 @@ export class ScreviApiClient {
 			const responseData = Array.isArray(response) ? response : (response as { data?: unknown[] }).data || [];
 			allSources = [...allSources, ...responseData];
 			
-			hasMore = !Array.isArray(response) && (response as { pagination?: { hasMore?: boolean } }).pagination?.hasMore || false;
+			// Fix #3: Explicit parenthesization for clarity
+			hasMore = !Array.isArray(response) &&
+				((response as { pagination?: { hasMore?: boolean } }).pagination?.hasMore ?? false);
 			currentPage++;
 		}
 
@@ -131,21 +83,35 @@ export class ScreviApiClient {
 			if (sourceObj.highlights && Array.isArray(sourceObj.highlights)) {
 				for (const highlight of sourceObj.highlights) {
 					const highlightObj = highlight as Record<string, unknown>;
+					
+					// Normalize tags to HighlightTag[] format
+					let tags: HighlightTag[] | undefined;
+					if (Array.isArray(highlightObj.tags)) {
+						tags = highlightObj.tags.map((tag: unknown) => {
+							if (typeof tag === 'string') {
+								return { name: tag };
+							}
+							if (tag && typeof tag === 'object' && 'name' in tag) {
+								return tag as HighlightTag;
+							}
+							return { name: String(tag) };
+						});
+					}
+
 					// Create a properly mapped highlight based on actual database schema
 					const mappedHighlight: ScreviHighlight = {
-						// Map actual database fields to interface
 						id: highlightObj.id as string | undefined,
-						content: this.decodeHtmlEntities(highlightObj.content as string || ''),
-						note: highlightObj.notes as string | undefined, // Database uses 'notes', interface expects 'note'
-						source: sourceObj.name, // Use source name from parent object
-						sourceType: sourceObj.type, // Use source type from parent object
-						title: this.decodeHtmlEntities(sourceObj.name || ''), // Use source name as title for highlights
-						author: (highlightObj.author || sourceObj.author) as string | undefined, // Highlight has author field
+						content: decodeHtmlEntities(highlightObj.content as string || ''),
+						note: highlightObj.notes as string | undefined,
+						source: sourceObj.name,
+						sourceType: sourceObj.type as ScreviHighlight['sourceType'],
+						title: decodeHtmlEntities(sourceObj.name || ''),
+						author: (highlightObj.author || sourceObj.author) as string | undefined,
 						url: (highlightObj.url || sourceObj.url) as string | undefined,
 						date: (highlightObj.created_at || sourceObj.created_at) as string || '',
 						created_at: (highlightObj.created_at || sourceObj.created_at) as string | undefined,
 						updated_at: highlightObj.updated_at as string | undefined,
-						tags: highlightObj.tags as string[] | undefined,
+						tags,
 						chapter: highlightObj.chapter as string | undefined,
 						page: highlightObj.page as number | undefined,
 						location: highlightObj.location as string | undefined,
@@ -162,7 +128,7 @@ export class ScreviApiClient {
 		return allHighlights;
 	}
 
-	updateCredentials(apiKey: string, apiUrl: string) {
+	updateCredentials(apiKey: string, apiUrl: string = API_BASE_URL) {
 		this.apiKey = apiKey;
 		this.apiUrl = apiUrl;
 	}

@@ -1,6 +1,9 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
-import { ScreviApiClient, ScreviHighlight, SourceType, VALID_SOURCE_TYPES } from './src/api';
+import { ScreviApiClient, ScreviHighlight, SourceType, VALID_SOURCE_TYPES, API_BASE_URL } from './src/api';
+import { decodeHtmlEntities } from './src/utils';
 import * as nunjucks from 'nunjucks';
+
+const CACHE_FILE = 'screvi-cache.json';
 
 interface ScreviSyncSettings {
 	apiKey: string;
@@ -26,6 +29,24 @@ const DEFAULT_SETTINGS: ScreviSyncSettings = {
 	autoLinkFields: ["author"],
 	enableAutoLinking: true
 }
+
+const HIGHLIGHT_TEMPLATE = `{{highlight.content | blockquote}}
+{%- if highlight.note %}
+
+**Note:** {{highlight.note}}
+{%- endif %}
+{%- if highlight.chapter %}
+**Chapter:** {{highlight.chapter}}
+{%- endif %}
+{%- if highlight.page %}
+**Page:** {{highlight.page}}
+{%- endif %}
+{%- if highlight.tags %}
+{% for tag in highlight.tags %}#{{tag.name}}{% if not loop.last %}, {% endif %}{% endfor %}
+{%- endif %}
+
+---
+`;
 
 const BOOK_TEMPLATE = `**Author:** {{author}}
 {% if url %}**URL:** [{{title}}]({{url}}){% endif %}
@@ -62,10 +83,9 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		// Templates are now loaded on-demand
 
 		// Initialize API client
-		this.apiClient = new ScreviApiClient(this.settings.apiKey, 'https://api.screvi.com');
+		this.apiClient = new ScreviApiClient(this.settings.apiKey, API_BASE_URL);
 
 		// Initialize Nunjucks template engine
 		this.setupNunjucks();
@@ -110,19 +130,27 @@ export default class ScreviSyncPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const data = await this.loadData();
+		// Only pick known setting keys, ignore any stale 'highlights' key from old versions
+		const settingsOnly: Partial<ScreviSyncSettings> = {};
+		if (data) {
+			for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof ScreviSyncSettings)[]) {
+				if (key in data) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					(settingsOnly as any)[key] = data[key];
+				}
+			}
+		}
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, settingsOnly);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 		// Update API client credentials when settings change
 		if (this.apiClient) {
-			this.apiClient.updateCredentials(this.settings.apiKey, 'https://api.screvi.com');
+			this.apiClient.updateCredentials(this.settings.apiKey, API_BASE_URL);
 		}
 	}
-
-
-
 
 	updateStatusBar(text: string) {
 		this.statusBarItem.setText(`Screvi: ${text}`);
@@ -164,16 +192,21 @@ export default class ScreviSyncPlugin extends Plugin {
 				
 				await this.processHighlights(uniqueHighlights);
 				
-				// Update cached highlights, removing duplicates based on content and date
-				const existingIds = new Set(this.highlights.map(h => `${h.content || ''}_${h.created_at || h.date || ''}`));
-				const newUniqueHighlights = uniqueHighlights.filter(h => 
-					!existingIds.has(`${h.content || ''}_${h.created_at || h.date || ''}`)
-				);
+				// Merge with cache using id-based deduplication
+				const existingIds = new Set(this.highlights.map(h => h.id).filter(Boolean));
+				const newUniqueHighlights = uniqueHighlights.filter(h => !h.id || !existingIds.has(h.id));
 				
 				this.highlights = [...newUniqueHighlights, ...this.highlights];
 				await this.saveCachedHighlights();
 				
-				this.settings.lastSyncTime = Date.now();
+				// Use the latest server-side timestamp from fetched highlights
+				const latestTimestamp = this.getLatestTimestamp(uniqueHighlights);
+				if (latestTimestamp > 0) {
+					this.settings.lastSyncTime = latestTimestamp;
+				} else {
+					// Fallback to client time only if no server timestamps available
+					this.settings.lastSyncTime = Date.now();
+				}
 				await this.saveSettings();
 				
 				new Notice(`Synced ${uniqueHighlights.length} highlights from Screvi`);
@@ -192,12 +225,27 @@ export default class ScreviSyncPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * Extract the latest created_at/updated_at timestamp from a set of highlights.
+	 * Returns 0 if no valid timestamps are found.
+	 */
+	getLatestTimestamp(highlights: ScreviHighlight[]): number {
+		let latest = 0;
+		for (const h of highlights) {
+			const candidates = [h.updated_at, h.created_at, h.date].filter(Boolean);
+			for (const candidate of candidates) {
+				const ts = new Date(candidate as string).getTime();
+				if (!isNaN(ts) && ts > latest) {
+					latest = ts;
+				}
+			}
+		}
+		return latest;
+	}
+
 	async processHighlights(highlights: ScreviHighlight[]) {
 		// Ensure folder exists
-		const folder = this.app.vault.getAbstractFileByPath(this.settings.defaultFolder);
-		if (!folder) {
-			await this.app.vault.createFolder(this.settings.defaultFolder);
-		}
+		await this.ensureFolder(this.settings.defaultFolder);
 
 		// Group highlights by source type for folder organization
 		const highlightsByType = this.groupHighlightsBySourceType(highlights);
@@ -206,13 +254,9 @@ export default class ScreviSyncPlugin extends Plugin {
 			// Create source type folder with display name
 			const displayName = this.getSourceTypeDisplayName(sourceType);
 			const typeFolderPath = `${this.settings.defaultFolder}/${this.sanitizeFileName(displayName)}`;
-			const typeFolder = this.app.vault.getAbstractFileByPath(typeFolderPath);
-			if (!typeFolder) {
-				await this.app.vault.createFolder(typeFolderPath);
-			}
+			await this.ensureFolder(typeFolderPath);
 
 			// Always create book files (group highlights by source)
-			// Pass display name for folder path, but keep sourceType for internal logic
 			await this.createBookFiles(typeHighlights, displayName);
 		}
 	}
@@ -228,19 +272,21 @@ export default class ScreviSyncPlugin extends Plugin {
 			const existingFile = this.app.vault.getAbstractFileByPath(filePath);
 			
 			if (existingFile instanceof TFile) {
-				// File exists - just append new highlights
+				// File exists — append new highlights using the template
 				const existingContent = await this.app.vault.read(existingFile);
 				let newContent = existingContent;
 				
-				// Append each new highlight
 				for (const highlight of sourceHighlights) {
-					// Format content as proper blockquote (add > to each line)
-					const formattedContent = this.formatAsBlockquote(highlight.content || '');
-					const highlightContent = `\n${formattedContent}\n\n---\n`;
+					// Use id-based detection if available, fall back to content match
+					const isDuplicate = highlight.id
+						? existingContent.includes(`<!-- screvi-id:${highlight.id} -->`)
+						: existingContent.includes(highlight.content);
 					
-					// Only append if this exact highlight isn't already in the file
-					if (!existingContent.includes(highlight.content)) {
-						newContent += highlightContent;
+					if (!isDuplicate) {
+						// Render through the template for consistent formatting
+						const rendered = this.renderTemplate(HIGHLIGHT_TEMPLATE, { highlight });
+						const idMarker = highlight.id ? `<!-- screvi-id:${highlight.id} -->\n` : '';
+						newContent += `\n${idMarker}${rendered}`;
 					}
 				}
 				
@@ -249,7 +295,7 @@ export default class ScreviSyncPlugin extends Plugin {
 					await this.app.vault.modify(existingFile, newContent);
 				}
 			} else {
-				// File doesn't exist - create new one with template
+				// File doesn't exist — create new one with template
 				const templateData = {
 					title: source,
 					author: sourceHighlights[0]?.author || '',
@@ -295,7 +341,15 @@ export default class ScreviSyncPlugin extends Plugin {
 	deduplicateHighlights(highlights: ScreviHighlight[]): ScreviHighlight[] {
 		const seen = new Set<string>();
 		return highlights.filter(highlight => {
-			// Create a unique key based on content and creation date
+			// Prefer id-based deduplication when available
+			if (highlight.id) {
+				if (seen.has(highlight.id)) {
+					return false;
+				}
+				seen.add(highlight.id);
+				return true;
+			}
+			// Fall back to content+date key for highlights without ids
 			const key = `${highlight.content || ''}_${highlight.created_at || highlight.date || ''}`;
 			if (seen.has(key)) {
 				return false;
@@ -305,6 +359,21 @@ export default class ScreviSyncPlugin extends Plugin {
 		});
 	}
 
+	/**
+	 * Ensure a folder exists, handling race conditions gracefully.
+	 */
+	async ensureFolder(path: string) {
+		if (!this.app.vault.getAbstractFileByPath(path)) {
+			try {
+				await this.app.vault.createFolder(path);
+			} catch (e) {
+				// Folder may have been created by a concurrent operation — ignore if it now exists
+				if (!this.app.vault.getAbstractFileByPath(path)) {
+					throw e;
+				}
+			}
+		}
+	}
 
 	getSourceTypeDisplayName(sourceType: string): string {
 		// Map source types to user-friendly display names
@@ -372,7 +441,7 @@ export default class ScreviSyncPlugin extends Plugin {
 		this.nunjucksEnv.addFilter('blockquote', (str: string) => {
 			if (str && str.trim()) {
 				// Decode HTML entities first (in case content has &gt; etc.)
-				const decoded = this.decodeHtmlEntities(str);
+				const decoded = decodeHtmlEntities(str);
 				// Split by line breaks and add > to each line
 				const blockquoted = decoded.trim().split('\n').map(line => {
 					// Handle empty lines by adding just ">"
@@ -386,14 +455,14 @@ export default class ScreviSyncPlugin extends Plugin {
 
 		this.nunjucksEnv.addFilter('decode_html', (str: string) => {
 			if (str && typeof str === 'string') {
-				return this.decodeHtmlEntities(str);
+				return decodeHtmlEntities(str);
 			}
 			return str;
 		});
 
 		this.nunjucksEnv.addFilter('decode_text', (str: string) => {
 			if (str && typeof str === 'string') {
-				return this.decodeHtmlEntities(str);
+				return decodeHtmlEntities(str);
 			}
 			return str;
 		});
@@ -461,55 +530,6 @@ export default class ScreviSyncPlugin extends Plugin {
 			.replace('DD', day);
 	}
 
-	decodeHtmlEntities(text: string): string {
-		if (!text) return text;
-		
-		// Common HTML entities that might appear in content
-		const entities: { [key: string]: string } = {
-			'&amp;': '&',
-			'&lt;': '<',
-			'&gt;': '>',
-			'&quot;': '"',
-			'&#39;': "'",
-			'&apos;': "'",
-			'&nbsp;': ' ',
-			'&ndash;': '\u2013',
-			'&mdash;': '\u2014',
-			'&hellip;': '\u2026',
-			'&lsquo;': '\u2018',
-			'&rsquo;': '\u2019',
-			'&ldquo;': '\u201c',
-			'&rdquo;': '\u201d'
-		};
-
-		let decoded = text;
-
-		// First handle JSON escape sequences
-		decoded = decoded
-			.replace(/\\n/g, '\n')      // Newlines
-			.replace(/\\t/g, '\t')      // Tabs  
-			.replace(/\\r/g, '\r')      // Carriage returns
-			.replace(/\\"/g, '"')       // Escaped quotes
-			.replace(/\\\\/g, '\\');    // Escaped backslashes (do this last)
-
-		// Replace named HTML entities
-		for (const [entity, replacement] of Object.entries(entities)) {
-			decoded = decoded.replace(new RegExp(entity, 'g'), replacement);
-		}
-
-		// Replace numeric entities (like &#39; &#8217; etc.)
-		decoded = decoded.replace(/&#(\d+);/g, (match, num) => {
-			return String.fromCharCode(parseInt(num, 10));
-		});
-
-		// Replace hex entities (like &#x27; etc.)
-		decoded = decoded.replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => {
-			return String.fromCharCode(parseInt(hex, 16));
-		});
-
-		return decoded;
-	}
-
 	formatAsBlockquote(text: string): string {
 		if (!text || !text.trim()) return text;
 		
@@ -519,8 +539,6 @@ export default class ScreviSyncPlugin extends Plugin {
 			return line.trim() ? `> ${line}` : '>';
 		}).join('\n');
 	}
-
-
 
 	sanitizeTagName(tagName: string): string {
 		// Sanitize tag names according to Obsidian requirements
@@ -533,15 +551,34 @@ export default class ScreviSyncPlugin extends Plugin {
 			.toLowerCase();                 // Convert to lowercase for consistency
 	}
 
+	/**
+	 * Load cached highlights from a dedicated cache file (separate from settings).
+	 */
 	async loadCachedHighlights() {
-		const cached = await this.loadData();
-		this.highlights = cached?.highlights || [];
+		try {
+			const cachePath = `${this.manifest.dir}/${CACHE_FILE}`;
+			if (await this.app.vault.adapter.exists(cachePath)) {
+				const raw = await this.app.vault.adapter.read(cachePath);
+				const parsed = JSON.parse(raw);
+				this.highlights = parsed?.highlights || [];
+			}
+		} catch (error) {
+			console.error('Failed to load cached highlights:', error);
+			this.highlights = [];
+		}
 	}
 
+	/**
+	 * Save cached highlights to a dedicated cache file (separate from settings).
+	 */
 	async saveCachedHighlights() {
-		const data = await this.loadData() || {};
-		data.highlights = this.highlights;
-		await this.saveData(data);
+		try {
+			const cachePath = `${this.manifest.dir}/${CACHE_FILE}`;
+			const data = JSON.stringify({ highlights: this.highlights });
+			await this.app.vault.adapter.write(cachePath, data);
+		} catch (error) {
+			console.error('Failed to save cached highlights:', error);
+		}
 	}
 
 }
@@ -662,4 +699,3 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		}
 	}
 }
-
