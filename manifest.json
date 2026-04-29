@@ -1,7 +1,7 @@
 {
   "id": "screvi",
   "name": "Screvi Sync",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "minAppVersion": "1.10.3",
   "description": "Import highlights and sources from Screvi.",
   "author": "Screvi Team",
