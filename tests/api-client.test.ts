@@ -47,6 +47,24 @@ describe('ScreviApiClient (real backend)', () => {
 		}
 	});
 
+	itIfKey('every highlight has exactly one of source_id / article_id set', async () => {
+		// Server change: /highlights/export now exposes the discriminator that
+		// distinguishes sources-table rows from articles-table rows. The
+		// plugin's categorize() relies on this — guard against a regression
+		// where the server stops sending these fields.
+		const highlights = await client.fetchHighlightsSince();
+		const missing: string[] = [];
+		const both: string[] = [];
+		for (const h of highlights) {
+			const hasS = !!h.source_id;
+			const hasA = !!h.article_id;
+			if (!hasS && !hasA) missing.push(`${h.source ?? '?'} (${h.sourceType ?? '?'})`);
+			if (hasS && hasA) both.push(`${h.source ?? '?'}`);
+		}
+		expect(missing, `${missing.length} highlights missing both ids; first few: ${missing.slice(0, 3).join(', ')}`).toHaveLength(0);
+		expect(both, `${both.length} highlights have both ids: ${both.slice(0, 3).join(', ')}`).toHaveLength(0);
+	});
+
 	itIfKey('every highlight carries its source name and a routable type', async () => {
 		const highlights = await client.fetchHighlightsSince();
 		// Each highlight must carry the source name so it can be routed into

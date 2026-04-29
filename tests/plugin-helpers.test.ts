@@ -16,6 +16,14 @@ function makePlugin(overrides: Partial<ScreviSyncPlugin> = {}): ScreviSyncPlugin
 		tagPrefix: 'screvi',
 		autoLinkFields: ['author'],
 		enableAutoLinking: true,
+		syncedCategories: {
+			books: true,
+			posts: true,
+			articles: true,
+			documents: true,
+			youtube: true,
+			personalNotes: true,
+		},
 	};
 	Object.assign(stub, overrides);
 	stub.setupNunjucks();
@@ -70,25 +78,6 @@ describe('sanitizeTagName', () => {
 	});
 });
 
-describe('getSourceTypeDisplayName', () => {
-	let plugin: ScreviSyncPlugin;
-	beforeEach(() => { plugin = makePlugin(); });
-
-	it.each([
-		['article', 'Articles'],
-		['book', 'Books'],
-		['self', 'Personal Notes'],
-		['tweet', 'Tweets'],
-		['youtube', 'YouTube'],
-	])('maps %s -> %s', (input, expected) => {
-		expect(plugin.getSourceTypeDisplayName(input)).toBe(expected);
-	});
-
-	it('returns the raw value for unknown source types', () => {
-		expect(plugin.getSourceTypeDisplayName('podcast')).toBe('podcast');
-	});
-});
-
 describe('groupHighlightsBySource', () => {
 	it('groups by source name and falls back to "Unknown source"', () => {
 		const plugin = makePlugin();
@@ -104,26 +93,23 @@ describe('groupHighlightsBySource', () => {
 	});
 });
 
-describe('groupHighlightsBySourceType', () => {
-	it('passes through valid source types', () => {
+describe('groupHighlightsByCategory', () => {
+	it('routes by category, picking up the discriminator', () => {
 		const plugin = makePlugin();
-		const grouped = plugin.groupHighlightsBySourceType([
-			hl({ sourceType: 'book' }),
-			hl({ sourceType: 'tweet' }),
-			hl({ sourceType: 'book' }),
+		const grouped = plugin.groupHighlightsByCategory([
+			hl({ sourceType: 'book', source_id: 'b1' }),
+			hl({ sourceType: 'tweet', source_id: 't1' }),
+			hl({ sourceType: 'article', article_id: 'a1', url: 'https://medium.com/x' }),
+			hl({ sourceType: 'article', article_id: 'a2', url: 'https://youtube.com/watch?v=x' }),
+			hl({ sourceType: 'article', source_id: 's-doc' }),
+			hl({ sourceType: 'self', source_id: 's-self' }),
 		]);
-		expect(grouped.book).toHaveLength(2);
-		expect(grouped.tweet).toHaveLength(1);
-	});
-
-	it('falls back unknown types to "self"', () => {
-		const plugin = makePlugin();
-		const grouped = plugin.groupHighlightsBySourceType([
-			// cast lets us pass an out-of-band type like the API client might
-			hl({ sourceType: 'podcast' as unknown as ScreviHighlight['sourceType'] }),
-			hl({}),
-		]);
-		expect(grouped.self).toHaveLength(2);
+		expect(grouped.books).toHaveLength(1);
+		expect(grouped.posts).toHaveLength(1);
+		expect(grouped.articles).toHaveLength(1);
+		expect(grouped.youtube).toHaveLength(1);
+		expect(grouped.documents).toHaveLength(1);
+		expect(grouped.personalNotes).toHaveLength(1);
 	});
 });
 
