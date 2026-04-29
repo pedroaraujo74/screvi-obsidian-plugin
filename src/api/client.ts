@@ -48,17 +48,18 @@ export class ScreviApiClient {
 	}
 
 	async fetchHighlightsSince(start_from?: number): Promise<ScreviHighlight[]> {
+		const MAX_PAGES = 1000;
 		let allSources: unknown[] = [];
 		let currentPage = 1;
 		let hasMore = true;
 
 		// Fetch all pages with start_from parameter using consistent endpoint
-		while (hasMore) {
+		while (hasMore && currentPage <= MAX_PAGES) {
 			const params: Record<string, unknown> = {
 				format: 'markdown',
 				page: currentPage
 			};
-			
+
 			if (start_from) {
 				// Convert timestamp to ISO string format for database compatibility
 				params.start_from = new Date(start_from).toISOString();
@@ -69,8 +70,7 @@ export class ScreviApiClient {
 			// Handle both possible response structures
 			const responseData = Array.isArray(response) ? response : (response as { data?: unknown[] }).data || [];
 			allSources = [...allSources, ...responseData];
-			
-			// Fix #3: Explicit parenthesization for clarity
+
 			hasMore = !Array.isArray(response) &&
 				((response as { pagination?: { hasMore?: boolean } }).pagination?.hasMore ?? false);
 			currentPage++;
@@ -102,7 +102,7 @@ export class ScreviApiClient {
 					const mappedHighlight: ScreviHighlight = {
 						id: highlightObj.id as string | undefined,
 						content: decodeHtmlEntities(highlightObj.content as string || ''),
-						note: highlightObj.notes as string | undefined,
+						note: (highlightObj.note ?? highlightObj.notes) as string | undefined,
 						source: sourceObj.name,
 						sourceType: sourceObj.type as ScreviHighlight['sourceType'],
 						title: decodeHtmlEntities(sourceObj.name || ''),

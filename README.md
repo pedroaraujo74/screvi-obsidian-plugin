@@ -13,7 +13,7 @@ This official plugin maintained by the Screvi team enables you to easily and aut
 
 1. Open Obsidian Settings
 2. Go to Community Plugins
-3. Click "Browse" and search for "Screvi Official"
+3. Click "Browse" and search for "Screvi Sync"
 4. Click Install, then Enable
 
 ## Setup

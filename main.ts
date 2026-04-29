@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile, normalizePath } from 'obsidian';
 import { ScreviApiClient, ScreviHighlight, SourceType, VALID_SOURCE_TYPES, API_BASE_URL } from './src/api';
 import { decodeHtmlEntities } from './src/utils';
 import * as nunjucks from 'nunjucks';
@@ -74,7 +74,7 @@ const BOOK_TEMPLATE = `**Author:** {{author}}
 
 export default class ScreviSyncPlugin extends Plugin {
 	settings: ScreviSyncSettings;
-	syncInterval: NodeJS.Timeout | null = null;
+	syncInterval: number | null = null;
 	statusBarItem: HTMLElement;
 	highlights: ScreviHighlight[] = [];
 	apiClient: ScreviApiClient;
@@ -124,8 +124,9 @@ export default class ScreviSyncPlugin extends Plugin {
 	}
 
 	onunload() {
-		if (this.syncInterval) {
-			clearInterval(this.syncInterval);
+		if (this.syncInterval !== null) {
+			window.clearInterval(this.syncInterval);
+			this.syncInterval = null;
 		}
 	}
 
@@ -157,20 +158,22 @@ export default class ScreviSyncPlugin extends Plugin {
 	}
 
 	setupAutoSync() {
-		if (this.syncInterval) {
-			clearInterval(this.syncInterval);
+		if (this.syncInterval !== null) {
+			window.clearInterval(this.syncInterval);
+			this.syncInterval = null;
 		}
-		
+
 		if (this.settings.autoSync && this.settings.syncInterval > 0) {
-			this.syncInterval = setInterval(() => {
+			this.syncInterval = window.setInterval(() => {
 				void this.syncHighlights();
 			}, this.settings.syncInterval * 60 * 60 * 1000);
+			this.registerInterval(this.syncInterval);
 		}
 	}
 
 	async syncHighlights(fullSync: boolean = false) {
 		if (!this.settings.apiKey) {
-			new Notice('Please set your screvi API key in plugin settings');
+			new Notice('Please set your Screvi API key in plugin settings');
 			return;
 		}
 
@@ -245,7 +248,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async processHighlights(highlights: ScreviHighlight[]) {
 		// Ensure folder exists
-		await this.ensureFolder(this.settings.defaultFolder);
+		await this.ensureFolder(normalizePath(this.settings.defaultFolder));
 
 		// Group highlights by source type for folder organization
 		const highlightsByType = this.groupHighlightsBySourceType(highlights);
@@ -253,7 +256,7 @@ export default class ScreviSyncPlugin extends Plugin {
 		for (const [sourceType, typeHighlights] of Object.entries(highlightsByType)) {
 			// Create source type folder with display name
 			const displayName = this.getSourceTypeDisplayName(sourceType);
-			const typeFolderPath = `${this.settings.defaultFolder}/${this.sanitizeFileName(displayName)}`;
+			const typeFolderPath = normalizePath(`${this.settings.defaultFolder}/${this.sanitizeFileName(displayName)}`);
 			await this.ensureFolder(typeFolderPath);
 
 			// Always create book files (group highlights by source)
@@ -263,11 +266,14 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async createBookFiles(highlights: ScreviHighlight[], sourceTypeDisplayName?: string) {
 		const groupedHighlights = this.groupHighlightsBySource(highlights);
-		const baseFolder = sourceTypeDisplayName ? `${this.settings.defaultFolder}/${this.sanitizeFileName(sourceTypeDisplayName)}` : this.settings.defaultFolder;
-		
+		const baseFolder = normalizePath(sourceTypeDisplayName
+			? `${this.settings.defaultFolder}/${this.sanitizeFileName(sourceTypeDisplayName)}`
+			: this.settings.defaultFolder);
+
 		for (const [source, sourceHighlights] of Object.entries(groupedHighlights)) {
 			const fileName = this.sanitizeFileName(source);
-			const filePath = `${baseFolder}/${fileName}.md`;
+			if (!fileName) continue;
+			const filePath = normalizePath(`${baseFolder}/${fileName}.md`);
 			
 			const existingFile = this.app.vault.getAbstractFileByPath(filePath);
 			
@@ -394,8 +400,9 @@ export default class ScreviSyncPlugin extends Plugin {
 		return name
 			.replace(/[<>:"|?*]/g, '')      // Remove Windows forbidden characters
 			.replace(/[/\\]/g, '-')        // Replace path separators with hyphens
+			.trim()                         // Trim before stripping trailing dots
 			.replace(/\.+$/g, '')           // Remove trailing dots (Windows issue)
-			.trim();                        // Remove leading/trailing whitespace
+			.trim();                        // Final trim in case dots exposed whitespace
 	}
 
 	setupNunjucks() {
@@ -551,13 +558,18 @@ export default class ScreviSyncPlugin extends Plugin {
 			.toLowerCase();                 // Convert to lowercase for consistency
 	}
 
+	private getCachePath(): string | null {
+		if (!this.manifest.dir) return null;
+		return normalizePath(`${this.manifest.dir}/${CACHE_FILE}`);
+	}
+
 	/**
 	 * Load cached highlights from a dedicated cache file (separate from settings).
 	 */
 	async loadCachedHighlights() {
 		try {
-			const cachePath = `${this.manifest.dir}/${CACHE_FILE}`;
-			if (await this.app.vault.adapter.exists(cachePath)) {
+			const cachePath = this.getCachePath();
+			if (cachePath && await this.app.vault.adapter.exists(cachePath)) {
 				const raw = await this.app.vault.adapter.read(cachePath);
 				const parsed = JSON.parse(raw);
 				this.highlights = parsed?.highlights || [];
@@ -573,7 +585,8 @@ export default class ScreviSyncPlugin extends Plugin {
 	 */
 	async saveCachedHighlights() {
 		try {
-			const cachePath = `${this.manifest.dir}/${CACHE_FILE}`;
+			const cachePath = this.getCachePath();
+			if (!cachePath) return;
 			const data = JSON.stringify({ highlights: this.highlights });
 			await this.app.vault.adapter.write(cachePath, data);
 		} catch (error) {
@@ -596,14 +609,10 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		new Setting(containerEl)
-			.setName('Sync configuration')
-			.setHeading();
-
 		// API Key
 		const apiKeySetting = new Setting(containerEl)
 			.setName('API key')
-			.setDesc('Your screvi API key for authentication. ');
+			.setDesc('Your Screvi API key for authentication. ');
 		
 		apiKeySetting.descEl.createEl('a', {
 			text: 'Get your API key',
@@ -654,7 +663,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Sync now')
-			.setDesc('Manually sync highlights from screvi.')
+			.setDesc('Manually sync highlights from Screvi.')
 			.addButton(button => button
 				.setButtonText('Sync')
 				.setCta()
