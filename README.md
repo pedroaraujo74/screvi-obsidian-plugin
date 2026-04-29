@@ -11,10 +11,26 @@ This official plugin maintained by the Screvi team enables you to easily and aut
 
 ## Installation
 
+Once approved on the [Obsidian community plugin store](https://obsidian.md/plugins):
+
 1. Open Obsidian Settings
 2. Go to Community Plugins
 3. Click "Browse" and search for "Screvi Sync"
 4. Click Install, then Enable
+
+### Manual installation
+
+Until the plugin lands in the community store, install it directly from a GitHub release:
+
+1. Download both files from the [latest release](https://github.com/pedroaraujo74/screvi-obsidian-plugin/releases/latest):
+   - `main.js`
+   - `manifest.json`
+2. In your vault, create the folder `.obsidian/plugins/screvi/` (the folder name must be exactly `screvi`).
+3. Move the two downloaded files into that folder.
+4. In Obsidian, open **Settings → Community plugins**. Make sure **Restricted mode** is off, then click the reload icon next to **Installed plugins**.
+5. Enable **Screvi Sync** in the list.
+
+To update later, repeat steps 1–3 with the new release files and reload Obsidian.
 
 ## Setup
 
