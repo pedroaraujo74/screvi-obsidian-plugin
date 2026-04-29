@@ -79,7 +79,7 @@ export class ScreviApiClient {
 		// Flatten all highlights from all sources
 		const allHighlights: ScreviHighlight[] = [];
 		for (const source of allSources) {
-			const sourceObj = source as { highlights?: unknown[]; name?: string; type?: string; author?: string; url?: string; created_at?: string };
+			const sourceObj = source as { highlights?: unknown[]; name?: string; type?: string; author?: string; url?: string; created_at?: string; source_id?: string | null; article_id?: string | null };
 			if (sourceObj.highlights && Array.isArray(sourceObj.highlights)) {
 				for (const highlight of sourceObj.highlights) {
 					const highlightObj = highlight as Record<string, unknown>;
@@ -117,7 +117,9 @@ export class ScreviApiClient {
 						location: highlightObj.location as string | undefined,
 						color: highlightObj.color as string | undefined,
 						book_id: highlightObj.book_id as string | undefined,
-						metadata: highlightObj.metadata as Record<string, unknown> | undefined
+						metadata: highlightObj.metadata as Record<string, unknown> | undefined,
+						source_id: sourceObj.source_id ?? null,
+						article_id: sourceObj.article_id ?? null
 					};
 					
 					allHighlights.push(mappedHighlight);

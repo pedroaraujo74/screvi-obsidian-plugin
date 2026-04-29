@@ -1,9 +1,12 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFile, normalizePath } from 'obsidian';
-import { ScreviApiClient, ScreviHighlight, SourceType, VALID_SOURCE_TYPES, API_BASE_URL } from './src/api';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, normalizePath } from 'obsidian';
+import { ScreviApiClient, ScreviHighlight, SyncCategory, SYNC_CATEGORIES, API_BASE_URL } from './src/api';
+import { categorize, categoryFolderName, categoryLabel } from './src/categorize';
 import { decodeHtmlEntities } from './src/utils';
 import * as nunjucks from 'nunjucks';
 
 const CACHE_FILE = 'screvi-cache.json';
+
+type CategoryFlags = Record<SyncCategory, boolean>;
 
 interface ScreviSyncSettings {
 	apiKey: string;
@@ -16,7 +19,17 @@ interface ScreviSyncSettings {
 	tagPrefix: string;
 	autoLinkFields: string[];
 	enableAutoLinking: boolean;
+	syncedCategories: CategoryFlags;
 }
+
+const DEFAULT_CATEGORY_FLAGS: CategoryFlags = {
+	books: true,
+	posts: true,
+	articles: true,
+	documents: true,
+	youtube: true,
+	personalNotes: true,
+};
 
 const DEFAULT_SETTINGS: ScreviSyncSettings = {
 	apiKey: '',
@@ -27,7 +40,8 @@ const DEFAULT_SETTINGS: ScreviSyncSettings = {
 	includeMetadata: true,
 	tagPrefix: "screvi",
 	autoLinkFields: ["author"],
-	enableAutoLinking: true
+	enableAutoLinking: true,
+	syncedCategories: { ...DEFAULT_CATEGORY_FLAGS }
 }
 
 const HIGHLIGHT_TEMPLATE = `{{highlight.content | blockquote}}
@@ -143,6 +157,12 @@ export default class ScreviSyncPlugin extends Plugin {
 			}
 		}
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, settingsOnly);
+		// Merge any partial syncedCategories from disk with defaults so a
+		// future-added category defaults to enabled rather than vanishing.
+		this.settings.syncedCategories = {
+			...DEFAULT_CATEGORY_FLAGS,
+			...(this.settings.syncedCategories || {}),
+		};
 	}
 
 	async saveSettings() {
@@ -247,21 +267,33 @@ export default class ScreviSyncPlugin extends Plugin {
 	}
 
 	async processHighlights(highlights: ScreviHighlight[]) {
-		// Ensure folder exists
+		// Drop highlights whose category the user has disabled. Anything not
+		// in the saved flags map (e.g. a future category added by a plugin
+		// upgrade where settings were merged with defaults) defaults to true.
+		const enabled = this.settings.syncedCategories;
+		const filtered = highlights.filter(h => enabled[categorize(h)] !== false);
+		if (filtered.length === 0) return;
+
 		await this.ensureFolder(normalizePath(this.settings.defaultFolder));
 
-		// Group highlights by source type for folder organization
-		const highlightsByType = this.groupHighlightsBySourceType(highlights);
-		
-		for (const [sourceType, typeHighlights] of Object.entries(highlightsByType)) {
-			// Create source type folder with display name
-			const displayName = this.getSourceTypeDisplayName(sourceType);
-			const typeFolderPath = normalizePath(`${this.settings.defaultFolder}/${this.sanitizeFileName(displayName)}`);
-			await this.ensureFolder(typeFolderPath);
+		// Group by category for folder routing.
+		const highlightsByCategory = this.groupHighlightsByCategory(filtered);
 
-			// Always create book files (group highlights by source)
-			await this.createBookFiles(typeHighlights, displayName);
+		for (const [category, categoryHighlights] of Object.entries(highlightsByCategory) as [SyncCategory, ScreviHighlight[]][]) {
+			const folderName = categoryFolderName(category);
+			const folderPath = normalizePath(`${this.settings.defaultFolder}/${this.sanitizeFileName(folderName)}`);
+			await this.ensureFolder(folderPath);
+			await this.createBookFiles(categoryHighlights, folderName);
 		}
+	}
+
+	groupHighlightsByCategory(highlights: ScreviHighlight[]): Partial<Record<SyncCategory, ScreviHighlight[]>> {
+		const groups: Partial<Record<SyncCategory, ScreviHighlight[]>> = {};
+		for (const h of highlights) {
+			const cat = categorize(h);
+			(groups[cat] ??= []).push(h);
+		}
+		return groups;
 	}
 
 	async createBookFiles(highlights: ScreviHighlight[], sourceTypeDisplayName?: string) {
@@ -274,44 +306,75 @@ export default class ScreviSyncPlugin extends Plugin {
 			const fileName = this.sanitizeFileName(source);
 			if (!fileName) continue;
 			const filePath = normalizePath(`${baseFolder}/${fileName}.md`);
-			
-			const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-			
-			if (existingFile instanceof TFile) {
-				// File exists — append new highlights using the template
-				const existingContent = await this.app.vault.read(existingFile);
-				let newContent = existingContent;
-				
-				for (const highlight of sourceHighlights) {
-					// Use id-based detection if available, fall back to content match
-					const isDuplicate = highlight.id
-						? existingContent.includes(`<!-- screvi-id:${highlight.id} -->`)
-						: existingContent.includes(highlight.content);
-					
-					if (!isDuplicate) {
-						// Render through the template for consistent formatting
-						const rendered = this.renderTemplate(HIGHLIGHT_TEMPLATE, { highlight });
-						const idMarker = highlight.id ? `<!-- screvi-id:${highlight.id} -->\n` : '';
-						newContent += `\n${idMarker}${rendered}`;
-					}
-				}
-				
-				// Only update if we actually added something
-				if (newContent !== existingContent) {
-					await this.app.vault.modify(existingFile, newContent);
-				}
-			} else {
-				// File doesn't exist — create new one with template
-				const templateData = {
-					title: source,
-					author: sourceHighlights[0]?.author || '',
-					url: sourceHighlights[0]?.url || '',
-					highlights: sourceHighlights
-				};
-				
-				const content = this.renderTemplate(BOOK_TEMPLATE, templateData);
-				await this.app.vault.create(filePath, content);
+
+			const existingFile = this.findFileCaseInsensitive(baseFolder, `${fileName}.md`);
+
+			if (existingFile) {
+				await this.appendHighlightsToFile(existingFile, sourceHighlights);
+				continue;
 			}
+
+			const templateData = {
+				title: source,
+				author: sourceHighlights[0]?.author || '',
+				url: sourceHighlights[0]?.url || '',
+				highlights: sourceHighlights
+			};
+			const content = this.renderTemplate(BOOK_TEMPLATE, templateData);
+
+			try {
+				await this.app.vault.create(filePath, content);
+			} catch (e) {
+				// macOS/Windows are case-insensitive at the filesystem level,
+				// but Obsidian's index uses exact-case lookups. A previous
+				// sync that wrote "How to Do Great Work.md" will collide with
+				// a write to "How to do great work.md", and getAbstractFile-
+				// ByPath misses the existing TFile. Recover by scanning the
+				// parent folder for any case-insensitive name match.
+				const recovered = this.findFileCaseInsensitive(baseFolder, `${fileName}.md`);
+				if (recovered) {
+					await this.appendHighlightsToFile(recovered, sourceHighlights);
+				} else {
+					console.error('Screvi: vault.create failed for', filePath, e);
+					throw e;
+				}
+			}
+		}
+	}
+
+	private findFileCaseInsensitive(folderPath: string, fileName: string): TFile | null {
+		const exact = this.app.vault.getAbstractFileByPath(normalizePath(`${folderPath}/${fileName}`));
+		if (exact instanceof TFile) return exact;
+		const folder = this.app.vault.getAbstractFileByPath(folderPath);
+		if (!(folder instanceof TFolder)) return null;
+		const target = fileName.toLowerCase();
+		for (const child of folder.children) {
+			if (child instanceof TFile && child.name.toLowerCase() === target) {
+				return child;
+			}
+		}
+		return null;
+	}
+
+	private async appendHighlightsToFile(file: TFile, sourceHighlights: ScreviHighlight[]) {
+		const existingContent = await this.app.vault.read(file);
+		let newContent = existingContent;
+
+		for (const highlight of sourceHighlights) {
+			// Prefer id-based detection when present; otherwise match on content body.
+			const isDuplicate = highlight.id
+				? existingContent.includes(`<!-- screvi-id:${highlight.id} -->`)
+				: existingContent.includes(highlight.content);
+
+			if (!isDuplicate) {
+				const rendered = this.renderTemplate(HIGHLIGHT_TEMPLATE, { highlight });
+				const idMarker = highlight.id ? `<!-- screvi-id:${highlight.id} -->\n` : '';
+				newContent += `\n${idMarker}${rendered}`;
+			}
+		}
+
+		if (newContent !== existingContent) {
+			await this.app.vault.modify(file, newContent);
 		}
 	}
 
@@ -322,24 +385,6 @@ export default class ScreviSyncPlugin extends Plugin {
 				groups[source] = [];
 			}
 			groups[source].push(highlight);
-			return groups;
-		}, {} as Record<string, ScreviHighlight[]>);
-	}
-
-	groupHighlightsBySourceType(highlights: ScreviHighlight[]): Record<string, ScreviHighlight[]> {
-		return highlights.reduce((groups, highlight) => {
-			// Use the source type from the API, defaulting to 'self' if not available
-			let sourceType: string = highlight.sourceType || 'self';
-			
-			// Map to the exact folder types: "book", "tweet", "self", "article", "youtube"
-			if (typeof sourceType === 'string' && !VALID_SOURCE_TYPES.includes(sourceType as SourceType)) {
-				sourceType = 'self'; // Default fallback
-			}
-			
-			if (!groups[sourceType]) {
-				groups[sourceType] = [];
-			}
-			groups[sourceType].push(highlight);
 			return groups;
 		}, {} as Record<string, ScreviHighlight[]>);
 	}
@@ -379,19 +424,6 @@ export default class ScreviSyncPlugin extends Plugin {
 				}
 			}
 		}
-	}
-
-	getSourceTypeDisplayName(sourceType: string): string {
-		// Map source types to user-friendly display names
-		const displayNames: Record<string, string> = {
-			'article': 'Articles',
-			'book': 'Books',
-			'self': 'Personal Notes',
-			'tweet': 'Tweets',
-			'youtube': 'YouTube'
-		};
-		
-		return displayNames[sourceType] || sourceType;
 	}
 
 	sanitizeFileName(name: string): string {
@@ -653,6 +685,26 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 						this.plugin.settings.syncInterval = value;
 						await this.plugin.saveSettings();
 						this.plugin.setupAutoSync();
+					}));
+		}
+
+		// What to sync
+		new Setting(containerEl)
+			.setName('What to sync')
+			.setHeading();
+
+		new Setting(containerEl)
+			.setName('Categories')
+			.setDesc('Choose which kinds of highlights to import. Disabled categories are skipped on every sync.');
+
+		for (const category of SYNC_CATEGORIES) {
+			new Setting(containerEl)
+				.setName(categoryLabel(category))
+				.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.syncedCategories[category])
+					.onChange(async (value) => {
+						this.plugin.settings.syncedCategories[category] = value;
+						await this.plugin.saveSettings();
 					}));
 		}
 
