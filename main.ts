@@ -274,44 +274,61 @@ export default class ScreviSyncPlugin extends Plugin {
 			const fileName = this.sanitizeFileName(source);
 			if (!fileName) continue;
 			const filePath = normalizePath(`${baseFolder}/${fileName}.md`);
-			
+
 			const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-			
+
 			if (existingFile instanceof TFile) {
-				// File exists — append new highlights using the template
-				const existingContent = await this.app.vault.read(existingFile);
-				let newContent = existingContent;
-				
-				for (const highlight of sourceHighlights) {
-					// Use id-based detection if available, fall back to content match
-					const isDuplicate = highlight.id
-						? existingContent.includes(`<!-- screvi-id:${highlight.id} -->`)
-						: existingContent.includes(highlight.content);
-					
-					if (!isDuplicate) {
-						// Render through the template for consistent formatting
-						const rendered = this.renderTemplate(HIGHLIGHT_TEMPLATE, { highlight });
-						const idMarker = highlight.id ? `<!-- screvi-id:${highlight.id} -->\n` : '';
-						newContent += `\n${idMarker}${rendered}`;
-					}
-				}
-				
-				// Only update if we actually added something
-				if (newContent !== existingContent) {
-					await this.app.vault.modify(existingFile, newContent);
-				}
-			} else {
-				// File doesn't exist — create new one with template
-				const templateData = {
-					title: source,
-					author: sourceHighlights[0]?.author || '',
-					url: sourceHighlights[0]?.url || '',
-					highlights: sourceHighlights
-				};
-				
-				const content = this.renderTemplate(BOOK_TEMPLATE, templateData);
-				await this.app.vault.create(filePath, content);
+				await this.appendHighlightsToFile(existingFile, sourceHighlights);
+				continue;
 			}
+
+			const templateData = {
+				title: source,
+				author: sourceHighlights[0]?.author || '',
+				url: sourceHighlights[0]?.url || '',
+				highlights: sourceHighlights
+			};
+			const content = this.renderTemplate(BOOK_TEMPLATE, templateData);
+
+			try {
+				await this.app.vault.create(filePath, content);
+			} catch (e) {
+				// The vault TFile index can lag behind the file system: a
+				// case-only-different sibling, an externally created file, or
+				// a freshly-ensured folder can all leave a file at this path
+				// without it showing up via getAbstractFileByPath. Recover by
+				// appending instead of failing the whole sync.
+				const errMsg = e instanceof Error ? e.message : String(e);
+				if (!errMsg.toLowerCase().includes('already exists')) throw e;
+				const recovered = this.app.vault.getAbstractFileByPath(filePath);
+				if (recovered instanceof TFile) {
+					await this.appendHighlightsToFile(recovered, sourceHighlights);
+				} else {
+					throw e;
+				}
+			}
+		}
+	}
+
+	private async appendHighlightsToFile(file: TFile, sourceHighlights: ScreviHighlight[]) {
+		const existingContent = await this.app.vault.read(file);
+		let newContent = existingContent;
+
+		for (const highlight of sourceHighlights) {
+			// Prefer id-based detection when present; otherwise match on content body.
+			const isDuplicate = highlight.id
+				? existingContent.includes(`<!-- screvi-id:${highlight.id} -->`)
+				: existingContent.includes(highlight.content);
+
+			if (!isDuplicate) {
+				const rendered = this.renderTemplate(HIGHLIGHT_TEMPLATE, { highlight });
+				const idMarker = highlight.id ? `<!-- screvi-id:${highlight.id} -->\n` : '';
+				newContent += `\n${idMarker}${rendered}`;
+			}
+		}
+
+		if (newContent !== existingContent) {
+			await this.app.vault.modify(file, newContent);
 		}
 	}
 
