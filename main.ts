@@ -145,18 +145,23 @@ export default class ScreviSyncPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const data = await this.loadData();
-		// Only pick known setting keys, ignore any stale 'highlights' key from old versions
-		const settingsOnly: Partial<ScreviSyncSettings> = {};
-		if (data) {
-			for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof ScreviSyncSettings)[]) {
-				if (key in data) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					(settingsOnly as any)[key] = data[key];
-				}
-			}
+		// Copy known keys explicitly so stale fields from older plugin
+		// versions (e.g. a top-level 'highlights' blob) are dropped.
+		const raw = (await this.loadData()) as Partial<ScreviSyncSettings> | null;
+		const picked: Partial<ScreviSyncSettings> = {};
+		if (raw && typeof raw === 'object') {
+			if (raw.apiKey !== undefined) picked.apiKey = raw.apiKey;
+			if (raw.syncInterval !== undefined) picked.syncInterval = raw.syncInterval;
+			if (raw.defaultFolder !== undefined) picked.defaultFolder = raw.defaultFolder;
+			if (raw.autoSync !== undefined) picked.autoSync = raw.autoSync;
+			if (raw.lastSyncTime !== undefined) picked.lastSyncTime = raw.lastSyncTime;
+			if (raw.includeMetadata !== undefined) picked.includeMetadata = raw.includeMetadata;
+			if (raw.tagPrefix !== undefined) picked.tagPrefix = raw.tagPrefix;
+			if (raw.autoLinkFields !== undefined) picked.autoLinkFields = raw.autoLinkFields;
+			if (raw.enableAutoLinking !== undefined) picked.enableAutoLinking = raw.enableAutoLinking;
+			if (raw.syncedCategories !== undefined) picked.syncedCategories = raw.syncedCategories;
 		}
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, settingsOnly);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, picked);
 		// Merge any partial syncedCategories from disk with defaults so a
 		// future-added category defaults to enabled rather than vanishing.
 		this.settings.syncedCategories = {
@@ -193,7 +198,7 @@ export default class ScreviSyncPlugin extends Plugin {
 
 	async syncHighlights(fullSync: boolean = false) {
 		if (!this.settings.apiKey) {
-			new Notice('Please set your Screvi API key in plugin settings');
+			new Notice('Please set your API key in plugin settings');
 			return;
 		}
 
@@ -644,7 +649,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 		// API Key
 		const apiKeySetting = new Setting(containerEl)
 			.setName('API key')
-			.setDesc('Your Screvi API key for authentication. ');
+			.setDesc('Your API key for authentication. ');
 		
 		apiKeySetting.descEl.createEl('a', {
 			text: 'Get your API key',
@@ -715,7 +720,7 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Sync now')
-			.setDesc('Manually sync highlights from Screvi.')
+			.setDesc('Manually sync highlights.')
 			.addButton(button => button
 				.setButtonText('Sync')
 				.setCta()
