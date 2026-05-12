@@ -608,8 +608,8 @@ export default class ScreviSyncPlugin extends Plugin {
 			const cachePath = this.getCachePath();
 			if (cachePath && await this.app.vault.adapter.exists(cachePath)) {
 				const raw = await this.app.vault.adapter.read(cachePath);
-				const parsed = JSON.parse(raw);
-				this.highlights = parsed?.highlights || [];
+				const parsed = JSON.parse(raw) as { highlights?: ScreviHighlight[] } | null;
+				this.highlights = parsed?.highlights ?? [];
 			}
 		} catch (error) {
 			console.error('Failed to load cached highlights:', error);

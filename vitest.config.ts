@@ -1,8 +1,11 @@
 import { defineConfig } from 'vitest/config';
+import { loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { config as loadEnv } from 'dotenv';
 
-loadEnv({ path: '.env.test' });
+// Populate process.env with everything in .env.test so integration tests
+// pick up SCREVI_API_KEY. Vite normally only exposes VITE_-prefixed vars,
+// so we explicitly use an empty prefix to load all keys.
+Object.assign(process.env, loadEnv('test', process.cwd(), ''));
 
 const obsidianMock = fileURLToPath(new URL('./tests/__mocks__/obsidian.ts', import.meta.url));
 
