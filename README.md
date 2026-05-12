@@ -1,4 +1,4 @@
-# Screvi Obsidian Plugin 
+# Screvi Sync
 
 This official plugin maintained by the Screvi team enables you to easily and automatically export all your highlights from [Screvi](https://screvi.com/) to Obsidian.
 
@@ -43,4 +43,12 @@ To update later, repeat steps 1–3 with the new release files and reload Obsidi
 ## Requirements
 
 - A Screvi account with an active trial or subscription
+
+## Network use and privacy
+
+This plugin connects to a single host — `https://api.screvi.com` — to read your highlights. It uses your API key from the settings tab for authentication and sends no other data.
+
+When **Auto sync** is enabled (default: on, every 2 hours), the plugin polls `api.screvi.com` on a timer in the background to fetch new highlights. You can change the interval, or disable auto-sync entirely and trigger syncs manually, in **Settings → Screvi Sync**.
+
+No analytics, telemetry, or third-party services are contacted.
 
