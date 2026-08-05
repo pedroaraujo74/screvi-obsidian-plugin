@@ -7,6 +7,8 @@ export interface RequestUrlParam {
 	method?: string;
 	headers?: Record<string, string>;
 	body?: string | ArrayBuffer;
+	/** Real Obsidian throws on non-2xx unless this is false; this mock never throws. */
+	throw?: boolean;
 }
 
 export interface RequestUrlResponse {

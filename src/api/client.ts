@@ -32,16 +32,38 @@ export class ScreviApiClient {
 			});
 		}
 
+		// throw: false so a 401 surfaces as a status we can explain, rather than
+		// Obsidian's bare "Request failed" — which tells the user nothing about
+		// which of their key, their subscription, or our server is at fault.
 		const response = await requestUrl({
 			url: url.toString(),
+			throw: false,
 			headers: {
 				'X-API-Key': this.apiKey,
 				'Content-Type': 'application/json'
 			}
 		});
 
+		if (response.status === 401) {
+			throw new Error(
+				'Screvi rejected the API key (401). Copy it again from Screvi → Settings → API, ' +
+				'and make sure the whole value was pasted.'
+			);
+		}
+
+		if (response.status === 403) {
+			throw new Error(
+				'Screvi refused the request (403). This usually means the account is in read-only ' +
+				'mode because the subscription lapsed.'
+			);
+		}
+
+		if (response.status === 429) {
+			throw new Error('Screvi rate limit reached (429). Try syncing again in a few minutes.');
+		}
+
 		if (response.status < 200 || response.status >= 300) {
-			throw new Error(`API request failed: ${response.status}`);
+			throw new Error(`Screvi API request failed (${response.status}).`);
 		}
 
 		return response.json as T;
