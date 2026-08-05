@@ -1,11 +1,10 @@
 {
-  "id": "screvi",
-  "name": "Screvi Sync",
-  "version": "1.0.4",
-  "minAppVersion": "1.10.3",
-  "description": "Import highlights and sources from Screvi.",
-  "author": "Screvi Team",
-  "authorUrl": "https://screvi.com",
-  "isDesktopOnly": false
+	"id": "screvi",
+	"name": "Screvi Sync",
+	"version": "1.0.5",
+	"minAppVersion": "1.10.3",
+	"description": "Import highlights and sources from Screvi.",
+	"author": "Screvi Team",
+	"authorUrl": "https://screvi.com",
+	"isDesktopOnly": false
 }
-
