@@ -1,8 +1,12 @@
 export const API_BASE_URL = 'https://api.screvi.com';
 
-export type SourceType = 'book' | 'tweet' | 'self' | 'article' | 'youtube';
+// Every type /api/highlights/export actually emits today. `podcast` and
+// `custom` were added server-side after this list was written; both currently
+// fall through categorize()'s default and land in Articles. That is a routing
+// gap, not a sync failure — they do reach the vault.
+export type SourceType = 'book' | 'tweet' | 'self' | 'article' | 'youtube' | 'podcast' | 'custom';
 
-export const VALID_SOURCE_TYPES: SourceType[] = ['book', 'tweet', 'self', 'article', 'youtube'];
+export const VALID_SOURCE_TYPES: SourceType[] = ['book', 'tweet', 'self', 'article', 'youtube', 'podcast', 'custom'];
 
 export interface HighlightTag {
 	name: string;
