@@ -664,6 +664,20 @@ class ScreviSyncSettingTab extends PluginSettingTab {
 				await this.plugin.saveSettings();
 			}));
 
+		// Destination folder. The setting has always existed; it just had no
+		// control, so the only way to move the notes was hand-editing data.json.
+		new Setting(containerEl)
+			.setName('Folder')
+			.setDesc('Where synced notes are written. Each category gets a subfolder inside it (books, articles, posts, documents, YouTube, personal notes). Changing this writes future syncs to the new folder; notes already in the old one stay put.')
+			.addText(text => text
+				.setPlaceholder(DEFAULT_SETTINGS.defaultFolder)
+				.setValue(this.plugin.settings.defaultFolder)
+				.onChange(async (value) => {
+					const folder = normalizePath(value.trim() || DEFAULT_SETTINGS.defaultFolder);
+					this.plugin.settings.defaultFolder = folder;
+					await this.plugin.saveSettings();
+				}));
+
 		// Auto Sync
 		new Setting(containerEl)
 			.setName('Auto sync')
